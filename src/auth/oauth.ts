@@ -1,0 +1,92 @@
+import { AUTHORIZE_ENDPOINT, CLIENT_ID, REDIRECT_URI, SCOPES, TOKEN_ENDPOINT, CLIENT_SECRET } from './config';
+import { generateVerifier, generateChallenge } from './pkce';
+
+export const KEY = 'oauth_tokens';
+export const VERIFIER_KEY = 'pkce_verifier';
+export const STATE_KEY = 'oauth_state';
+
+export interface Tokens {
+  access_token: string;
+  refresh_token?: string;
+  id_token?: string;
+  expires_at: number;
+}
+
+function generateState(len = 32) {
+  const arr = new Uint8Array(len);
+  crypto.getRandomValues(arr);
+  // Narrow to URL-safe base64-like random string (alphanumeric)
+  return btoa(String.fromCharCode(...Array.from(arr))).replace(/[^a-zA-Z0-9]/g, '').slice(0, len);
+}
+
+export function getStoredTokens(): Tokens | null {
+  const raw = localStorage.getItem(KEY);
+  if (!raw) return null;
+  try {
+    const t = JSON.parse(raw);
+    if (Date.now() > t.expires_at) {
+      localStorage.removeItem(KEY);
+      return null;
+    }
+    return t;
+  } catch {
+    return null;
+  }
+}
+
+export function clearTokens() {
+  localStorage.removeItem(KEY);
+  localStorage.removeItem(VERIFIER_KEY);
+  localStorage.removeItem(STATE_KEY);
+}
+
+export async function startLogin() {
+  const verifier = generateVerifier();
+  localStorage.setItem(VERIFIER_KEY, verifier);
+  const challenge = await generateChallenge(verifier);
+  const state = generateState();
+  localStorage.setItem(STATE_KEY, state);
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: CLIENT_ID,
+    redirect_uri: REDIRECT_URI,
+    scope: SCOPES,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    state
+  });
+  globalThis.location.href = `${AUTHORIZE_ENDPOINT}?${params.toString()}`;
+}
+
+export async function handleCallback(code: string, returnedState: string | null) {
+  const storedState = localStorage.getItem(STATE_KEY);
+  if (!storedState) throw new Error('Missing stored state');
+  if (!returnedState || returnedState !== storedState) throw new Error('Invalid state');
+  const verifier = localStorage.getItem(VERIFIER_KEY);
+  if (!verifier) throw new Error('Missing PKCE verifier');
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: REDIRECT_URI,
+    client_id: CLIENT_ID,
+    code_verifier: verifier
+  });
+  const basic = btoa(`${CLIENT_ID}:${CLIENT_SECRET}`);
+  const res = await fetch(TOKEN_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${basic}`
+    },
+    body
+  });
+  if (!res.ok) throw new Error('Token exchange failed');
+  const json = await res.json();
+  const expires_at = Date.now() + (json.expires_in * 1000 - 5000);
+  const tokens: Tokens = { access_token: json.access_token, refresh_token: json.refresh_token, id_token: json.id_token, expires_at };
+  localStorage.setItem(KEY, JSON.stringify(tokens));
+  globalThis.dispatchEvent(new Event('oauth_tokens_updated'));
+  localStorage.removeItem(VERIFIER_KEY);
+  localStorage.removeItem(STATE_KEY);
+  return tokens;
+}
