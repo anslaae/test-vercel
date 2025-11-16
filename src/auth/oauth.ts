@@ -72,7 +72,12 @@ export async function handleCallback(code: string, returnedState: string | null)
     code_verifier: verifier
   });
   const basic = btoa(`${CLIENT_ID}:${CLIENT_SECRET}`);
-  const res = await fetch(TOKEN_ENDPOINT, {
+
+  // Extract path from TOKEN_ENDPOINT to route through BFF proxy
+  const tokenUrl = new URL(TOKEN_ENDPOINT);
+  const proxyPath = `/api${tokenUrl.pathname}`;
+
+  const res = await fetch(proxyPath, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
