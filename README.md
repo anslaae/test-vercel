@@ -95,3 +95,42 @@ The function handles `OPTIONS` automatically and returns 204 with CORS headers.
 
 ### Caching
 Simple in-memory cache for successful GET responses when `PROXY_CACHE_TTL` > 0. This resets per function instance and is best-effort.
+
+## Vercel Logging
+
+### Viewing Logs
+
+**Option 1: Vercel Dashboard**
+- Go to your project → Deployment → Functions tab
+- Click on any function to see logs
+- Use Real-time Logs for live streaming
+
+**Option 2: Vercel CLI** (recommended for development)
+```bash
+# Install CLI
+npm i -g vercel
+
+# Stream logs in real-time
+vercel logs --follow
+
+# Filter proxy logs
+vercel logs --follow | grep "Proxy:"
+```
+
+### Frontend Logs (Browser)
+- OAuth flow logs appear in browser DevTools Console
+- Filter by `[OAuth]`, `[Callback]`, or `[AuthProvider]`
+
+### Backend Logs (Vercel)
+- BFF proxy logs include request IDs for tracing
+- Shows method, path, target URL, timing, and errors
+- Example: `[Proxy:a7k3x2] Upstream response: { status: 200, duration: '342ms' }`
+
+### Detailed Guide
+See [VERCEL_LOGGING.md](./VERCEL_LOGGING.md) for:
+- Complete logging setup
+- Production best practices
+- Monitoring and alerts
+- Log drains configuration
+- Troubleshooting tips
+
