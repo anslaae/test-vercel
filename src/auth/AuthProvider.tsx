@@ -22,16 +22,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setTokens(getStoredTokens());
+    console.log('[AuthProvider] Initializing, checking for stored tokens');
+    const storedTokens = getStoredTokens();
+    console.log('[AuthProvider] Stored tokens:', {
+      hasTokens: !!storedTokens,
+      isAuthenticated: !!storedTokens,
+      expiresAt: storedTokens?.expires_at
+    });
+    setTokens(storedTokens);
     setLoading(false);
   }, []);
 
   // Listen for custom event and storage changes to keep tokens in sync
   useEffect(() => {
-    const update = () => setTokens(getStoredTokens());
+    const update = () => {
+      console.log('[AuthProvider] Token update event received');
+      const updatedTokens = getStoredTokens();
+      console.log('[AuthProvider] Updated tokens:', {
+        hasTokens: !!updatedTokens,
+        isAuthenticated: !!updatedTokens
+      });
+      setTokens(updatedTokens);
+    };
     window.addEventListener('oauth_tokens_updated', update);
     const storageHandler = (e: StorageEvent) => {
-      if (e.key === KEY) update();
+      if (e.key === KEY) {
+        console.log('[AuthProvider] Storage event for oauth tokens');
+        update();
+      }
     };
     window.addEventListener('storage', storageHandler);
     return () => {
@@ -41,11 +59,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const logout = () => {
+    console.log('[AuthProvider] Logout called');
     clearTokens();
     setTokens(null);
+    console.log('[AuthProvider] Tokens cleared');
   };
 
-  const login = () => startLogin();
+  const login = () => {
+    console.log('[AuthProvider] Login called, starting OAuth flow');
+    startLogin();
+  };
 
   return (
     <AuthContext.Provider value={{ tokens, isAuthenticated: !!tokens, loading, login, logout }}>
