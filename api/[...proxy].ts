@@ -6,7 +6,7 @@
 const ALLOWED_METHODS = ['GET','POST','PUT','PATCH','DELETE','OPTIONS'];
 const TARGET_API_BASE = process.env.TARGET_API_BASE; // e.g. https://api.example.com
 const API_BEARER_TOKEN = process.env.TARGET_API_BEARER_TOKEN; // optional upstream auth
-const ALLOWLIST_PATH_PREFIXES = (process.env.ALLOWLIST_PATH_PREFIXES || '/tasks,/users,/oauth2').split(',').map(s => s.trim()).filter(Boolean);
+const ALLOWLIST_PATH_PREFIXES = (process.env.ALLOWLIST_PATH_PREFIXES || '/api,/tasks,/users,/oauth').split(',').map(s => s.trim()).filter(Boolean);
 const CORS_ALLOW_ORIGIN = process.env.CORS_ALLOW_ORIGIN || '*'; // configure to your domain in production
 const CACHE_TTL_SECONDS = parseInt(process.env.PROXY_CACHE_TTL || '0', 10); // simple in-memory GET cache (not for production scale)
 
