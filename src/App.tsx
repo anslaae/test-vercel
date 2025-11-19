@@ -18,7 +18,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/oauth/callback" element={<Callback />} />
-      <Route path="/" element={<Protected><Dashboard /></Protected>} />
+      <Route path="/me" element={<Protected><Dashboard /></Protected>} />
       <Route path="/task/:id" element={<Protected><TaskPage /></Protected>} />
     </Routes>
   );
