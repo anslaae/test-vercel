@@ -20,7 +20,7 @@ export default function App() {
       <Route path="/oauth/callback" element={<Callback />} />
       <Route path="/" element={<Protected><Dashboard /></Protected>} />
       <Route path="/task/:id" element={<Protected><TaskPage /></Protected>} />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <!--Route path="*" element={<Navigate to="/" replace />} /-->
     </Routes>
   );
 }

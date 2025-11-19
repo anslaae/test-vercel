@@ -39,7 +39,7 @@ export default async function handler(req: any, res: any) {
     res.setHeader('Access-Control-Allow-Origin', CORS_ALLOW_ORIGIN);
     res.setHeader('Access-Control-Allow-Methods', ALLOWED_METHODS.join(','));
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.status(406).json({ error: 'Method not allowed' });
+    res.status(405).json({ error: 'Method not allowed' });
     return;
   }
 
