@@ -58,6 +58,13 @@ export default async function handler(req: VercelRequest, res: ServerResponse) {
 
     console.log(`[Proxy] Response: ${response.status} ${response.statusText}`);
 
+    // Send response body
+    const responseBody = await response.arrayBuffer();
+    const responseBuffer = Buffer.from(responseBody);
+
+    // Log response body
+    console.log(`[Proxy] Response body (${responseBuffer.length} bytes):`, responseBuffer.toString('utf-8'));
+
     // Forward response
     res.statusCode = response.status;
 
@@ -71,9 +78,7 @@ export default async function handler(req: VercelRequest, res: ServerResponse) {
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-    // Send response body
-    const responseBody = await response.arrayBuffer();
-    res.end(Buffer.from(responseBody));
+    res.end(responseBuffer);
 
   } catch (error) {
     console.error(`[Proxy] Error:`, error);
