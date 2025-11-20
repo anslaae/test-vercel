@@ -27,8 +27,8 @@ const Callback: React.FC = () => {
     console.log('[Callback] Starting token exchange...');
     handleCallback(code, state)
       .then(() => {
-        console.log('[Callback] Token exchange successful, navigating to /');
-        nav('/');
+        console.log('[Callback] Token exchange successful, navigating to /me');
+        nav('/me');
       })
       .catch(e => {
         console.error('[Callback] Token exchange failed:', e);

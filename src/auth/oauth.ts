@@ -92,7 +92,6 @@ export async function handleCallback(code: string, returnedState: string | null)
     grant_type: 'authorization_code',
     code,
     redirect_uri: REDIRECT_URI,
-    //client_id: CLIENT_ID,
     code_verifier: verifier
   });
   const basic = btoa(`${CLIENT_ID}:${CLIENT_SECRET}`);

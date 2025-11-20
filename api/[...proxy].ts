@@ -1,9 +1,10 @@
 // Simple BFF proxy for Vercel
-// Forwards requests to TARGET_API_BASE without modification
+// Forwards requests to different API bases depending on the path
 
 import { IncomingMessage, ServerResponse } from 'http';
 
-const TARGET_API_BASE = process.env.TARGET_API_BASE || '';
+const AUTH_API_BASE = process.env.AUTH_API_BASE || 'https://api.devtest.catalystone.dev';
+const USER_API_BASE = process.env.USER_API_BASE || 'https://api.devtest.catalystone.io';
 
 interface VercelRequest extends IncomingMessage {
   query: Record<string, string | string[]>;
@@ -12,16 +13,16 @@ interface VercelRequest extends IncomingMessage {
 }
 
 export default async function handler(req: VercelRequest, res: ServerResponse) {
-  if (!TARGET_API_BASE) {
-    res.statusCode = 500;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ error: 'TARGET_API_BASE not configured' }));
-    return;
-  }
-
   // Extract path from URL - remove /api prefix
   const path = req.url?.replace(/^\/api/, '') || '/';
-  const targetUrl = `${TARGET_API_BASE}${path}`;
+
+  // Route to appropriate API based on path
+  let targetBase = USER_API_BASE;
+  if (path.startsWith('/auth2/') || path.startsWith('/oauth')) {
+    targetBase = AUTH_API_BASE;
+  }
+
+  const targetUrl = `${targetBase}${path}`;
 
   console.log(`[Proxy] ${req.method} ${req.url} → ${targetUrl}`);
 
