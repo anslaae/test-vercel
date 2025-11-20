@@ -68,9 +68,13 @@ export default async function handler(req: VercelRequest, res: ServerResponse) {
     // Forward response
     res.statusCode = response.status;
 
-    // Copy response headers
+    // Copy response headers, but exclude compression headers
+    // (fetch() automatically decompresses, but headers still indicate compression)
+    const headersToSkip = ['content-encoding', 'transfer-encoding', 'content-length'];
     response.headers.forEach((value, key) => {
-      res.setHeader(key, value);
+      if (!headersToSkip.includes(key.toLowerCase())) {
+        res.setHeader(key, value);
+      }
     });
 
     // Add CORS headers
