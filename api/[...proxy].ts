@@ -140,9 +140,24 @@ export default async function handler(req: any, res: any) {
 
   let body: any = undefined;
   if (!['GET','HEAD'].includes(method)) {
+    // Since bodyParser is disabled, we need to read the raw body
     if (req.body) {
-      if (typeof req.body === 'string' || Buffer.isBuffer(req.body)) body = req.body;
-      else body = JSON.stringify(req.body);
+      // If body is already parsed (shouldn't happen with bodyParser: false)
+      if (typeof req.body === 'string' || Buffer.isBuffer(req.body)) {
+        body = req.body;
+      } else {
+        body = JSON.stringify(req.body);
+      }
+    } else if (req.readable) {
+      // Read raw body from stream
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+      }
+      body = Buffer.concat(chunks);
+    }
+
+    if (body) {
       console.log(`[Proxy:${requestId}] Request body size: ${body.length} bytes`);
     }
   }
@@ -268,7 +283,7 @@ export default async function handler(req: any, res: any) {
 
 export const config = {
   api: {
-    bodyParser: true, // allow JSON parsing
+    bodyParser: false, // disable automatic parsing to preserve raw body (especially for form-urlencoded)
   }
 };
 
