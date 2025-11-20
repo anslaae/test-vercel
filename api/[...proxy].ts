@@ -147,6 +147,57 @@ export default async function handler(req: any, res: any) {
     }
   }
 
+  // Log complete request details before sending
+  console.log(`[Proxy:${requestId}] === UPSTREAM REQUEST ===`);
+  console.log(`[Proxy:${requestId}] Method: ${method}`);
+  console.log(`[Proxy:${requestId}] URL: ${target.toString()}`);
+  console.log(`[Proxy:${requestId}] Headers:`, JSON.stringify(headers, null, 2));
+
+  if (body) {
+    try {
+      const bodyStr = typeof body === 'string' ? body : body.toString('utf-8');
+      if (bodyStr.length <= 2000) {
+        console.log(`[Proxy:${requestId}] Request Payload:`, bodyStr);
+      } else {
+        console.log(`[Proxy:${requestId}] Request Payload (truncated):`, bodyStr.substring(0, 2000) + '...');
+      }
+
+      // Try to parse and pretty-print if it's JSON
+      if (headers['Content-Type']?.includes('application/json')) {
+        try {
+          const jsonPayload = JSON.parse(bodyStr);
+          console.log(`[Proxy:${requestId}] Request Payload (JSON):`, JSON.stringify(jsonPayload, null, 2));
+        } catch {
+          // Not valid JSON, already logged as text
+        }
+      }
+
+      // If it's form-urlencoded, parse and log it nicely
+      if (headers['Content-Type']?.includes('application/x-www-form-urlencoded')) {
+        try {
+          const params = new URLSearchParams(bodyStr);
+          const formData: Record<string, string> = {};
+          params.forEach((value, key) => {
+            // Mask sensitive fields
+            if (['code_verifier', 'code', 'client_secret', 'password'].includes(key)) {
+              formData[key] = '[REDACTED]';
+            } else {
+              formData[key] = value;
+            }
+          });
+          console.log(`[Proxy:${requestId}] Request Form Data:`, JSON.stringify(formData, null, 2));
+        } catch {
+          // Failed to parse form data
+        }
+      }
+    } catch (e) {
+      console.log(`[Proxy:${requestId}] Request Payload (binary):`, body.length, 'bytes');
+    }
+  } else {
+    console.log(`[Proxy:${requestId}] Request Payload: (none)`);
+  }
+  console.log(`[Proxy:${requestId}] === END REQUEST ===`);
+
   try {
     console.log(`[Proxy:${requestId}] Fetching upstream...`);
     const startTime = Date.now();
@@ -163,6 +214,29 @@ export default async function handler(req: any, res: any) {
     const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
     const buf = Buffer.from(await upstream.arrayBuffer());
     console.log(`[Proxy:${requestId}] Response body size: ${buf.length} bytes`);
+
+    // Log response body for debugging (limit size for large responses)
+    if (buf.length > 0) {
+      try {
+        const bodyText = buf.toString('utf-8');
+        if (bodyText.length <= 5000) {
+          console.log(`[Proxy:${requestId}] Response body:`, bodyText);
+        } else {
+          console.log(`[Proxy:${requestId}] Response body (truncated):`, bodyText.substring(0, 5000) + '...');
+        }
+        // Try to parse as JSON for better logging
+        if (contentType.includes('application/json')) {
+          try {
+            const jsonBody = JSON.parse(bodyText);
+            console.log(`[Proxy:${requestId}] Response JSON:`, JSON.stringify(jsonBody, null, 2));
+          } catch {
+            // Not valid JSON, already logged as text
+          }
+        }
+      } catch (e) {
+        console.log(`[Proxy:${requestId}] Response body (binary):`, buf.length, 'bytes');
+      }
+    }
 
     // Set CORS for the browser consuming this response
     res.setHeader('Access-Control-Allow-Origin', CORS_ALLOW_ORIGIN);
