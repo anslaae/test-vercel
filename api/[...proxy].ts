@@ -60,9 +60,28 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  const segments = req.query.proxy || [];
-  const path = Array.isArray(segments) ? segments.join('/') : segments;
-  console.log(`[Proxy:${requestId}] Requested path:`, { path, segments, query: req.query });
+  // Extract path from URL - req.url is like '/api/auth2/oauth2/token'
+  // We need to strip '/api/' prefix to get the actual path to proxy
+  let path = '';
+  if (req.url) {
+    const urlPath = req.url.split('?')[0]; // Remove query string
+    console.log(`[Proxy:${requestId}] Full URL path:`, urlPath);
+
+    // Strip /api prefix
+    if (urlPath.startsWith('/api/')) {
+      path = urlPath.substring(5); // Remove '/api/'
+    } else if (urlPath.startsWith('/api')) {
+      path = urlPath.substring(4); // Remove '/api'
+    }
+  }
+
+  // Fallback to query params if URL parsing fails
+  if (!path) {
+    const segments = req.query.proxy || [];
+    path = Array.isArray(segments) ? segments.join('/') : segments;
+  }
+
+  console.log(`[Proxy:${requestId}] Extracted path:`, { path, originalUrl: req.url, query: req.query });
 
   if (!matchesAllowlist(path)) {
     console.warn(`[Proxy:${requestId}] Path not in allowlist:`, {
@@ -101,10 +120,17 @@ export default async function handler(req: any, res: any) {
   }
 
   const headers: Record<string,string> = {};
+
+  // Forward Authorization header from client (e.g., Basic auth for OAuth token exchange)
+  // Unless API_BEARER_TOKEN is set, which would override it
   if (API_BEARER_TOKEN) {
     headers['Authorization'] = `Bearer ${API_BEARER_TOKEN}`;
     console.log(`[Proxy:${requestId}] Added Bearer token from env`);
+  } else if (req.headers['authorization']) {
+    headers['Authorization'] = req.headers['authorization'] as string;
+    console.log(`[Proxy:${requestId}] Forwarding Authorization header from client`);
   }
+
   // Forward limited headers from client if needed (whitelist)
   const forwardContentType = req.headers['content-type'];
   if (forwardContentType) {
