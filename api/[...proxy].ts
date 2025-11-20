@@ -14,7 +14,14 @@ const CACHE_TTL_SECONDS = parseInt(process.env.PROXY_CACHE_TTL || '0', 10); // s
 const cache: Map<string,{expires:number; body:Buffer; status:number; headers:Record<string,string>}> = new Map();
 
 function matchesAllowlist(path: string) {
-  return ALLOWLIST_PATH_PREFIXES.some(p => path === p || path.startsWith(p + '/'));
+  // Normalize path to always start with /
+  const normalizedPath = path.startsWith('/') ? path : '/' + path;
+  const matches = ALLOWLIST_PATH_PREFIXES.some(p => {
+    const normalizedPrefix = p.startsWith('/') ? p : '/' + p;
+    return normalizedPath === normalizedPrefix || normalizedPath.startsWith(normalizedPrefix + '/');
+  });
+  console.log('[Allowlist Check]', { path, normalizedPath, allowlist: ALLOWLIST_PATH_PREFIXES, matches });
+  return matches;
 }
 
 export default async function handler(req: any, res: any) {
@@ -55,11 +62,12 @@ export default async function handler(req: any, res: any) {
 
   const segments = req.query.proxy || [];
   const path = Array.isArray(segments) ? segments.join('/') : segments;
-  console.log(`[Proxy:${requestId}] Requested path:`, { path, segments });
+  console.log(`[Proxy:${requestId}] Requested path:`, { path, segments, query: req.query });
 
-  if (!matchesAllowlist('/' + path)) {
+  if (!matchesAllowlist(path)) {
     console.warn(`[Proxy:${requestId}] Path not in allowlist:`, {
-      path: '/' + path,
+      path: path,
+      normalizedPath: (path.startsWith('/') ? path : '/' + path),
       allowlist: ALLOWLIST_PATH_PREFIXES
     });
     res.setHeader('Access-Control-Allow-Origin', CORS_ALLOW_ORIGIN);
