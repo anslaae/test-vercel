@@ -4,11 +4,23 @@ import Dashboard from './routes/Dashboard';
 import TaskPage from './routes/TaskPage';
 import Callback from './routes/Callback';
 import LoginPage from './routes/LoginPage';
+import './styles.css';
 
 function Protected({ children }: { children: JSX.Element }) {
   const { isAuthenticated, loading } = useAuth();
   const loc = useLocation();
-  if (loading) return <div>Loading...</div>;
+
+  if (loading) {
+    return (
+      <div className="login-container">
+        <div className="login-card">
+          <div className="spinner"></div>
+          <p className="loading-text">Checking authentication...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) return <Navigate to="/login" state={{ from: loc }} replace />;
   return children;
 }
@@ -16,6 +28,7 @@ function Protected({ children }: { children: JSX.Element }) {
 export default function App() {
   return (
     <Routes>
+      <Route path="/" element={<Navigate to="/me" replace />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/oauth/callback" element={<Callback />} />
       <Route path="/me" element={<Protected><Dashboard /></Protected>} />
