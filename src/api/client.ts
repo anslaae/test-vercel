@@ -10,7 +10,7 @@ export async function getUserInfo() {
     throw new Error('No access token available');
   }
 
-  const response = await fetch(`${API_BASE}/user-info/me`, {
+  const response = await fetch(`${API_BASE}/personal-details/me`, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${tokens.access_token}`
