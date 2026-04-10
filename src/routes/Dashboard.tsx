@@ -57,34 +57,25 @@ export default function Dashboard() {
   const renderUserData = () => {
     if (!userInfo) return null;
 
-    // Try to extract common fields for a nice display
-    const commonFields = ['id', 'email', 'name', 'firstName', 'lastName', 'username', 'displayName'];
-    const displayFields: Record<string, any> = {};
-    const otherFields: Record<string, any> = {};
+    const fullName = userInfo?.name?.fullName;
+    const otherFields: Record<string, any> = { ...userInfo };
 
-    Object.entries(userInfo).forEach(([key, value]) => {
-      if (commonFields.includes(key)) {
-        displayFields[key] = value;
-      } else {
-        otherFields[key] = value;
-      }
-    });
+    // Name is rendered explicitly above; keep the rest in "Additional Information".
+    delete otherFields.name;
 
     return (
       <>
-        {Object.keys(displayFields).length > 0 && (
+        {fullName && (
           <div className="user-info-grid">
-            {Object.entries(displayFields).map(([key, value]) => (
-              <div key={key} className="info-item">
-                <div className="info-label">{key.replace(/([A-Z])/g, ' $1').trim()}</div>
-                <div className="info-value">{String(value)}</div>
-              </div>
-            ))}
+            <div className="info-item">
+              <div className="info-label">Name</div>
+              <div className="info-value">{String(fullName)}</div>
+            </div>
           </div>
         )}
 
         {Object.keys(otherFields).length > 0 && (
-          <details className="raw-data-section" open={Object.keys(displayFields).length === 0}>
+          <details className="raw-data-section" open={!fullName}>
             <summary className="raw-data-summary">
               <span>Additional Information</span>
               <span className="summary-badge">{Object.keys(otherFields).length} fields</span>
