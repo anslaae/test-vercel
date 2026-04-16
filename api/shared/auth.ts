@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'crypto';
-import { getRequestOrigin, type VercelRequest } from './http';
+import { getRequestOrigin, type VercelRequest } from './http.js';
 
 export interface TokenSet {
   accessToken: string;

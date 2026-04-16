@@ -3,8 +3,8 @@ import {
   ensureActiveSession,
   getClearedSessionCookieHeader,
   getSessionIdFromRequest
-} from '../shared/session';
-import { sendJson, type VercelRequest } from '../shared/http';
+} from '../shared/session.js';
+import { sendJson, type VercelRequest } from '../shared/http.js';
 
 export default async function handler(req: VercelRequest, res: ServerResponse) {
   if (req.method !== 'GET') {
@@ -44,4 +44,3 @@ export default async function handler(req: VercelRequest, res: ServerResponse) {
     sendJson(res, 500, { authenticated: false, error: 'Unable to read session' }, { 'Cache-Control': 'no-store' });
   }
 }
-

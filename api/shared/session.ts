@@ -1,6 +1,6 @@
-import { refreshTokens, type TokenSet, generateRandomToken } from './auth';
-import { deleteKey, getJson, setJson } from './store';
-import { isSecureRequest, parseCookies, type VercelRequest } from './http';
+import { refreshTokens, type TokenSet, generateRandomToken } from './auth.js';
+import { deleteKey, getJson, setJson } from './store.js';
+import { isSecureRequest, parseCookies, type VercelRequest } from './http.js';
 
 export interface SessionRecord extends TokenSet {
   id: string;

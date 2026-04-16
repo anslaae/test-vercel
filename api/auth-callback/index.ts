@@ -1,12 +1,12 @@
 import { ServerResponse } from 'http';
-import { exchangeCodeForTokens } from '../shared/auth';
+import { exchangeCodeForTokens } from '../shared/auth.js';
 import {
   consumeOAuthTransaction,
   createSession,
   getClearedSessionCookieHeader,
   getSessionCookieHeader
-} from '../shared/session';
-import { getRequestUrl, redirect, safeReturnTo, sendJson, type VercelRequest } from '../shared/http';
+} from '../shared/session.js';
+import { getRequestUrl, redirect, safeReturnTo, sendJson, type VercelRequest } from '../shared/http.js';
 
 export default async function handler(req: VercelRequest, res: ServerResponse) {
   if (req.method !== 'GET') {
@@ -62,4 +62,3 @@ export default async function handler(req: VercelRequest, res: ServerResponse) {
     });
   }
 }
-
