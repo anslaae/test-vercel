@@ -429,6 +429,52 @@ body {
   font-size: 0.875rem;
 }
 
+.kv-list {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.kv-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr;
+  gap: 0.75rem;
+  align-items: start;
+  padding: 0.75rem;
+  border-radius: 10px;
+  background: var(--bg-white);
+  border: 1px solid var(--border-color);
+}
+
+.kv-key {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.kv-value {
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.token-sections {
+  margin-top: 1rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.token-section {
+  background: var(--bg-white);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+
+.token-section h4 {
+  margin: 0;
+  color: var(--text-primary);
+}
+
 .json-display {
   margin-top: 1rem;
   padding: 1.5rem;

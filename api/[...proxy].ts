@@ -4,7 +4,13 @@ import { getRequestUrl, readRawBody, sendJson, type VercelRequest } from './shar
 
 const AUTH_API_BASE = (process.env.AUTH_API_BASE || 'https://api.devtest.catalystone.dev').replace(/\/+$/, '');
 const USER_API_BASE = (process.env.USER_API_BASE || 'https://api.devtest.catalystone.io').replace(/\/+$/, '');
-const DEDICATED_AUTH_PATHS = new Set(['/auth-login', '/auth-callback', '/auth-session', '/auth-logout']);
+const DEDICATED_AUTH_PATHS = new Set([
+  '/auth-login',
+  '/auth-callback',
+  '/auth-session',
+  '/auth-session-details',
+  '/auth-logout'
+]);
 
 function getForwardHeader(req: VercelRequest, headerName: string) {
   const value = req.headers[headerName.toLowerCase()];

@@ -13,6 +13,10 @@
       "destination": "/api/auth-session/index"
     },
     {
+      "source": "/api/auth-session-details",
+      "destination": "/api/auth-session-details/index"
+    },
+    {
       "source": "/api/auth-logout",
       "destination": "/api/auth-logout/index"
     },

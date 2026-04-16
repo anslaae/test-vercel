@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { getUserInfo, UnauthorizedError } from '../api/client';
+import { getSessionDetails, getUserInfo, UnauthorizedError } from '../api/client';
 import useAuth from '../auth/useAuth';
+import type { SessionDetails } from '../types/api';
 import '../styles.css';
 
 export default function Dashboard() {
-  const [userInfo, setUserInfo] = useState<any>(null);
+  const [userInfo, setUserInfo] = useState<Record<string, unknown> | null>(null);
+  const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { logout, refreshSession } = useAuth();
@@ -16,13 +18,13 @@ export default function Dashboard() {
       try {
         setLoading(true);
         setError(null);
-        const data = await getUserInfo();
+        const [userData, sessionData] = await Promise.all([getUserInfo(), getSessionDetails()]);
         if (!active) {
           return;
         }
 
-        console.log('[Dashboard] User info received:', data);
-        setUserInfo(data);
+        setUserInfo(userData);
+        setSessionDetails(sessionData);
       } catch (err) {
         if (err instanceof UnauthorizedError) {
           await refreshSession();
@@ -78,10 +80,12 @@ export default function Dashboard() {
   const renderUserData = () => {
     if (!userInfo) return null;
 
-    const fullName = userInfo?.name?.fullName;
-    const otherFields: Record<string, any> = { ...userInfo };
+    const fullName =
+      typeof userInfo?.name === 'object' && userInfo?.name !== null && 'fullName' in userInfo.name
+        ? (userInfo.name as { fullName?: unknown }).fullName
+        : undefined;
 
-    // Name is rendered explicitly above; keep the rest in "Additional Information".
+    const otherFields: Record<string, unknown> = { ...userInfo };
     delete otherFields.name;
 
     return (
@@ -95,18 +99,133 @@ export default function Dashboard() {
           </div>
         )}
 
-        {Object.keys(otherFields).length > 0 && (
-          <details className="raw-data-section" open={!fullName}>
-            <summary className="raw-data-summary">
-              <span>Additional Information</span>
-              <span className="summary-badge">{Object.keys(otherFields).length} fields</span>
-            </summary>
-            <pre className="json-display">
-              {JSON.stringify(otherFields, null, 2)}
-            </pre>
-          </details>
-        )}
+        <details className="raw-data-section" open={!fullName}>
+          <summary className="raw-data-summary">
+            <span>Additional Information</span>
+            <span className="summary-badge">{Object.keys(otherFields).length} fields</span>
+          </summary>
+          <pre className="json-display">{JSON.stringify(otherFields, null, 2)}</pre>
+        </details>
       </>
+    );
+  };
+
+  const renderSessionData = () => {
+    if (!sessionDetails) {
+      return null;
+    }
+
+    const formatTimestamp = (timestampMs?: number) => {
+      if (!timestampMs || Number.isNaN(timestampMs)) {
+        return undefined;
+      }
+
+      return new Date(timestampMs).toISOString();
+    };
+
+    const idClaims = sessionDetails.tokens.id.claims || {};
+    const preferredUsername = typeof idClaims.preferred_username === 'string' ? idClaims.preferred_username : undefined;
+    const locale = typeof idClaims.locale === 'string' ? idClaims.locale : undefined;
+    const userEmailId = typeof idClaims.user_email_id === 'string' ? idClaims.user_email_id : undefined;
+
+    const accessScope = Array.isArray(sessionDetails.tokens.access.scope)
+      ? sessionDetails.tokens.access.scope.join(', ')
+      : sessionDetails.tokens.access.scope;
+
+    const formatDisplayValue = (value: unknown) => {
+      if (value === null || value === undefined || value === '') {
+        return 'Not available';
+      }
+
+      return String(value);
+    };
+
+    const sessionInfoRows: Array<[string, unknown]> = [
+      ['Refresh token available', sessionDetails.session.hasRefreshToken ? 'Yes' : 'No'],
+      ['Session created', formatTimestamp(sessionDetails.session.createdAt)],
+      ['Session expires', formatTimestamp(sessionDetails.session.expiresAt)]
+    ];
+
+    const idTokenRows: Array<[string, unknown]> = [
+      ['Present', sessionDetails.tokens.id.present ? 'Yes' : 'No'],
+      ['Format', sessionDetails.tokens.id.format],
+      ['Preferred username', preferredUsername],
+      ['Locale', locale],
+      ['User email id', userEmailId],
+      ['Issued at', formatTimestamp(sessionDetails.tokens.id.issuedAt)],
+      ['Expires at', formatTimestamp(sessionDetails.tokens.id.expiresAt)]
+    ];
+
+    const accessTokenRows: Array<[string, unknown]> = [
+      ['Present', sessionDetails.tokens.access.present ? 'Yes' : 'No'],
+      ['Format', sessionDetails.tokens.access.format],
+      ['Scope', accessScope],
+      ['Issuer', sessionDetails.tokens.access.issuer],
+      ['Issued at', formatTimestamp(sessionDetails.tokens.access.issuedAt)],
+      ['Expires at', formatTimestamp(sessionDetails.tokens.access.expiresAt)]
+    ];
+
+    const refreshTokenRows: Array<[string, unknown]> = [
+      ['Present', sessionDetails.tokens.refresh.present ? 'Yes' : 'No'],
+      ['Format', sessionDetails.tokens.refresh.format]
+    ];
+
+    return (
+      <details className="raw-data-section">
+        <summary className="raw-data-summary">
+          <span>Session and Token Information</span>
+          <span className="summary-badge">3 tokens</span>
+        </summary>
+        <div className="token-sections">
+          <section className="token-section">
+            <h4>Session</h4>
+            <div className="kv-list">
+              {sessionInfoRows.map(([key, value]) => (
+                <div key={key} className="kv-row">
+                  <span className="kv-key">{key}</span>
+                  <span className="kv-value">{formatDisplayValue(value)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="token-section">
+            <h4>ID Token</h4>
+            <div className="kv-list">
+              {idTokenRows.map(([key, value]) => (
+                <div key={key} className="kv-row">
+                  <span className="kv-key">{key}</span>
+                  <span className="kv-value">{formatDisplayValue(value)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="token-section">
+            <h4>Access Token</h4>
+            <div className="kv-list">
+              {accessTokenRows.map(([key, value]) => (
+                <div key={key} className="kv-row">
+                  <span className="kv-key">{key}</span>
+                  <span className="kv-value">{formatDisplayValue(value)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="token-section">
+            <h4>Refresh Token</h4>
+            <div className="kv-list">
+              {refreshTokenRows.map(([key, value]) => (
+                <div key={key} className="kv-row">
+                  <span className="kv-key">{key}</span>
+                  <span className="kv-value">{formatDisplayValue(value)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </details>
     );
   };
 
@@ -137,6 +256,7 @@ export default function Dashboard() {
 
         <div className="card-content">
           {renderUserData()}
+          {renderSessionData()}
         </div>
       </div>
 
@@ -148,4 +268,3 @@ export default function Dashboard() {
     </div>
   );
 }
-

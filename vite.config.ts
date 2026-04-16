@@ -13,6 +13,7 @@ export default defineConfig({
       '/api/auth-login':    { target: VERCEL_DEV, changeOrigin: true },
       '/api/auth-callback': { target: VERCEL_DEV, changeOrigin: true },
       '/api/auth-session':  { target: VERCEL_DEV, changeOrigin: true },
+      '/api/auth-session-details': { target: VERCEL_DEV, changeOrigin: true },
       '/api/auth-logout':   { target: VERCEL_DEV, changeOrigin: true },
 
       // All other /api/* calls go through the BFF proxy function

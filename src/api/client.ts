@@ -1,3 +1,5 @@
+import type { SessionDetails } from '../types/api';
+
 const API_BASE = '/api';
 
 export class UnauthorizedError extends Error {
@@ -30,6 +32,11 @@ async function request(path: string, init?: RequestInit) {
 
 export async function getUserInfo() {
   const response = await request('/personal-details/me');
-  return response.json();
+  return response.json() as Promise<Record<string, unknown>>;
+}
+
+export async function getSessionDetails() {
+  const response = await request('/auth-session-details');
+  return response.json() as Promise<SessionDetails>;
 }
 
