@@ -3,6 +3,7 @@ import { exchangeCodeForTokens } from '../shared/auth.js';
 import {
   consumeOAuthTransaction,
   createSession,
+  getClearedOAuthTransactionCookieHeader,
   getClearedSessionCookieHeader,
   getSessionCookieHeader
 } from '../shared/session.js';
@@ -21,7 +22,10 @@ export default async function handler(req: VercelRequest, res: ServerResponse) {
   if (error) {
     redirect(res, `/login?error=${encodeURIComponent(errorDescription || error)}`, 302, {
       'Cache-Control': 'no-store',
-      'Set-Cookie': getClearedSessionCookieHeader(req)
+      'Set-Cookie': [
+        getClearedSessionCookieHeader(req),
+        getClearedOAuthTransactionCookieHeader(req)
+      ]
     });
     return;
   }
@@ -32,16 +36,23 @@ export default async function handler(req: VercelRequest, res: ServerResponse) {
   if (!code || !state) {
     redirect(res, '/login?error=Missing%20authorization%20response', 302, {
       'Cache-Control': 'no-store',
-      'Set-Cookie': getClearedSessionCookieHeader(req)
+      'Set-Cookie': [
+        getClearedSessionCookieHeader(req),
+        getClearedOAuthTransactionCookieHeader(req)
+      ]
     });
     return;
   }
 
-  const transaction = await consumeOAuthTransaction(state);
+  const transaction = await consumeOAuthTransaction(req, state);
+
   if (!transaction) {
     redirect(res, '/login?error=Your%20sign-in%20session%20expired.%20Please%20try%20again.', 302, {
       'Cache-Control': 'no-store',
-      'Set-Cookie': getClearedSessionCookieHeader(req)
+      'Set-Cookie': [
+        getClearedSessionCookieHeader(req),
+        getClearedOAuthTransactionCookieHeader(req)
+      ]
     });
     return;
   }
@@ -50,15 +61,22 @@ export default async function handler(req: VercelRequest, res: ServerResponse) {
     const tokens = await exchangeCodeForTokens(req, code, transaction.verifier);
     const session = await createSession(tokens);
 
+
     redirect(res, safeReturnTo(transaction.returnTo), 302, {
       'Cache-Control': 'no-store',
-      'Set-Cookie': getSessionCookieHeader(session.id, req)
+      'Set-Cookie': [
+        getSessionCookieHeader(session, req),
+        getClearedOAuthTransactionCookieHeader(req)
+      ]
     });
   } catch (callbackError) {
     console.error('[auth-callback] OAuth callback failed', callbackError);
     redirect(res, '/login?error=Unable%20to%20complete%20sign-in', 302, {
       'Cache-Control': 'no-store',
-      'Set-Cookie': getClearedSessionCookieHeader(req)
+      'Set-Cookie': [
+        getClearedSessionCookieHeader(req),
+        getClearedOAuthTransactionCookieHeader(req)
+      ]
     });
   }
 }

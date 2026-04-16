@@ -15,6 +15,7 @@ export default async function handler(req: VercelRequest, res: ServerResponse) {
   try {
     const session = await ensureActiveSession(req);
 
+
     if (!session) {
       const headers: Record<string, string> = {
         'Cache-Control': 'no-store'

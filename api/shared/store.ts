@@ -16,6 +16,10 @@ function getRedisConfig() {
   return { url, token };
 }
 
+export function hasSharedStore() {
+  return !!getRedisConfig();
+}
+
 async function executeRedisCommand(command: Array<string | number>) {
   const config = getRedisConfig();
   if (!config) {

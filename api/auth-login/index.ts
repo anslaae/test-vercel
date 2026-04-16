@@ -1,5 +1,5 @@
 import { getAuthConfig, generatePkceChallenge, generatePkceVerifier } from '../shared/auth.js';
-import { createOAuthTransaction } from '../shared/session.js';
+import { createOAuthTransaction, getOAuthTransactionCookieHeader } from '../shared/session.js';
 import { getRequestUrl, redirect, safeReturnTo, sendJson, type VercelRequest } from '../shared/http.js';
 import { ServerResponse } from 'http';
 
@@ -28,7 +28,8 @@ export default async function handler(req: VercelRequest, res: ServerResponse) {
     });
 
     redirect(res, `${authorizeEndpoint}?${params.toString()}`, 302, {
-      'Cache-Control': 'no-store'
+      'Cache-Control': 'no-store',
+      'Set-Cookie': getOAuthTransactionCookieHeader(transaction, req)
     });
   } catch (error) {
     console.error('[auth-login] Failed to start OAuth flow', error);
