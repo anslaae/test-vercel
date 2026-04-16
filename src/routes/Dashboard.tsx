@@ -9,6 +9,8 @@ export default function Dashboard() {
   const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshingUserData, setRefreshingUserData] = useState(false);
+  const [refreshingSessionData, setRefreshingSessionData] = useState(false);
   const { logout, refreshSession } = useAuth();
 
   useEffect(() => {
@@ -50,6 +52,42 @@ export default function Dashboard() {
       active = false;
     };
   }, [refreshSession]);
+
+  const handleRefreshUserData = async () => {
+    try {
+      setRefreshingUserData(true);
+      setError(null);
+      const userData = await getUserInfo();
+      setUserInfo(userData);
+    } catch (err) {
+      if (err instanceof UnauthorizedError) {
+        await refreshSession();
+        return;
+      }
+      console.error('[Dashboard] Failed to refresh user data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to refresh user data');
+    } finally {
+      setRefreshingUserData(false);
+    }
+  };
+
+  const handleRefreshSessionData = async () => {
+    try {
+      setRefreshingSessionData(true);
+      setError(null);
+      const sessionData = await getSessionDetails();
+      setSessionDetails(sessionData);
+    } catch (err) {
+      if (err instanceof UnauthorizedError) {
+        await refreshSession();
+        return;
+      }
+      console.error('[Dashboard] Failed to refresh session data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to refresh session data');
+    } finally {
+      setRefreshingSessionData(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -101,7 +139,7 @@ export default function Dashboard() {
 
         <details className="raw-data-section" open={!fullName}>
           <summary className="raw-data-summary">
-            <span>Additional Information</span>
+            <h3 className="section-heading">Additional Information</h3>
             <span className="summary-badge">{Object.keys(otherFields).length} fields</span>
           </summary>
           <pre className="json-display">{JSON.stringify(otherFields, null, 2)}</pre>
@@ -171,12 +209,7 @@ export default function Dashboard() {
     ];
 
     return (
-      <details className="raw-data-section">
-        <summary className="raw-data-summary">
-          <span>Session and Token Information</span>
-          <span className="summary-badge">3 tokens</span>
-        </summary>
-        <div className="token-sections">
+      <div className="token-sections">
           <section className="token-section">
             <h4>Session</h4>
             <div className="kv-list">
@@ -225,7 +258,6 @@ export default function Dashboard() {
             </div>
           </section>
         </div>
-      </details>
     );
   };
 
@@ -251,12 +283,40 @@ export default function Dashboard() {
             <span className="card-icon">👤</span>
             User Profile
           </h2>
-          <span className="status-badge success">Active</span>
+          <div className="card-header-actions">
+            <button
+              onClick={handleRefreshUserData}
+              disabled={refreshingUserData}
+              className="refresh-button"
+              title="Refresh user data"
+            >
+              <span className={`refresh-icon ${refreshingUserData ? 'spinning' : ''}`}>🔄</span>
+              Refresh
+            </button>
+            <span className="status-badge success">Active</span>
+          </div>
         </div>
 
         <div className="card-content">
           {renderUserData()}
-          {renderSessionData()}
+          <div className="session-section">
+            <details className="token-details">
+              <summary className="token-summary">
+                <h3 className="session-title">Session and Token Information</h3>
+                <span className="summary-badge">4 sections</span>
+              </summary>
+              {renderSessionData()}
+              <button
+                onClick={handleRefreshSessionData}
+                disabled={refreshingSessionData}
+                className="refresh-button token-refresh-button"
+                title="Refresh session data"
+              >
+                <span className={`refresh-icon ${refreshingSessionData ? 'spinning' : ''}`}>🔄</span>
+                Refresh
+              </button>
+            </details>
+          </div>
         </div>
       </div>
 

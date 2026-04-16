@@ -333,6 +333,14 @@ body {
   margin-bottom: 2rem;
   padding-bottom: 1rem;
   border-bottom: 2px solid var(--border-color);
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.card-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
 }
 
 .card-title {
@@ -358,6 +366,46 @@ body {
 .status-badge.success {
   background: var(--success-light);
   color: var(--success-color);
+}
+
+.refresh-button {
+  padding: 0.5rem 1rem;
+  background: var(--primary-light);
+  color: var(--primary-color);
+  border: 1px solid var(--primary-color);
+  border-radius: var(--radius);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.refresh-button:hover:not(:disabled) {
+  background: var(--primary-color);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+
+.refresh-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.refresh-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.refresh-icon {
+  display: inline-block;
+  transition: transform 0.3s ease;
+}
+
+.refresh-icon.spinning {
+  animation: spin 1s linear infinite;
 }
 
 .card-content {
@@ -402,23 +450,50 @@ body {
 
 .raw-data-section {
   margin-top: 2rem;
-  padding: 1rem;
-  background: var(--bg-light);
-  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.raw-data-section[open] {
+  background: var(--bg-white);
 }
 
 .raw-data-summary {
-  font-weight: 600;
-  color: var(--text-primary);
+  padding: 1rem;
+  background: var(--bg-light);
   cursor: pointer;
   user-select: none;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  font-weight: 600;
+  color: var(--text-primary);
+  transition: background-color 0.3s ease;
 }
 
 .raw-data-summary:hover {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+.raw-data-summary::marker {
+  display: none;
+}
+
+.raw-data-summary::before {
+  content: '▶';
+  display: inline-block;
+  margin-right: 0.75rem;
+  transition: transform 0.3s ease;
   color: var(--primary-color);
+}
+
+.raw-data-section[open] .raw-data-summary::before {
+  transform: rotate(90deg);
+}
+
+.raw-data-section > :not(summary) {
+  padding: 0 1rem 1rem 1rem;
 }
 
 .summary-badge {
@@ -457,22 +532,94 @@ body {
   word-break: break-word;
 }
 
+.session-section {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 2px solid var(--border-color);
+}
+
+.session-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.session-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.section-heading {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
 .token-sections {
   margin-top: 1rem;
   display: grid;
   gap: 1rem;
-}
-
-.token-section {
-  background: var(--bg-white);
+}  .token-details {
   border: 1px solid var(--border-color);
-  border-radius: var(--radius);
-  padding: 1rem;
+  border-radius: 8px;
+  overflow: hidden;
 }
 
-.token-section h4 {
+.token-details[open] {
+  background: var(--bg-white);
+}
+
+.token-summary {
+  padding: 1rem;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-light);
+  transition: background-color 0.3s ease;
+}
+
+.token-summary:hover {
+  background-color: var(--bg-hover, rgba(0, 0, 0, 0.02));
+}
+
+.token-summary .session-title {
   margin: 0;
-  color: var(--text-primary);
+  font-size: 1.1rem;
+}
+
+.token-summary::marker {
+  display: none;
+}
+
+.token-summary::before {
+  content: '▶';
+  display: inline-block;
+  margin-right: 0.75rem;
+  transition: transform 0.3s ease;
+  color: var(--primary-color);
+}
+
+.token-details[open] .token-summary::before {
+  transform: rotate(90deg);
+}
+
+.token-details > :not(summary) {
+  padding: 0 1rem 1rem 1rem;
+}
+
+.token-refresh-button {
+  width: 100%;
+  justify-content: center;
+  margin-top: 1rem;
+  margin-bottom: 0;
 }
 
 .json-display {
