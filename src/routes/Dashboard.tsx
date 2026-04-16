@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getUserInfo } from '../api/client';
+import { getUserInfo, UnauthorizedError } from '../api/client';
 import useAuth from '../auth/useAuth';
 import '../styles.css';
 
@@ -7,26 +7,47 @@ export default function Dashboard() {
   const [userInfo, setUserInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { logout } = useAuth();
+  const { logout, refreshSession } = useAuth();
 
   useEffect(() => {
+    let active = true;
+
     async function fetchUserInfo() {
       try {
         setLoading(true);
         setError(null);
         const data = await getUserInfo();
+        if (!active) {
+          return;
+        }
+
         console.log('[Dashboard] User info received:', data);
         setUserInfo(data);
       } catch (err) {
+        if (err instanceof UnauthorizedError) {
+          await refreshSession();
+          return;
+        }
+
+        if (!active) {
+          return;
+        }
+
         console.error('[Dashboard] Failed to fetch user info:', err);
         setError(err instanceof Error ? err.message : 'Failed to load user info');
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     }
 
     fetchUserInfo();
-  }, []);
+
+    return () => {
+      active = false;
+    };
+  }, [refreshSession]);
 
   if (loading) {
     return (
@@ -99,7 +120,7 @@ export default function Dashboard() {
           </h1>
           <p className="dashboard-subtitle">Here's your personal information</p>
         </div>
-        <button onClick={logout} className="logout-button">
+        <button onClick={() => logout()} className="logout-button">
           <span>Sign Out</span>
           <span className="logout-icon">→</span>
         </button>
@@ -121,7 +142,7 @@ export default function Dashboard() {
 
       <div className="dashboard-footer">
         <p className="footer-text">
-          This information is securely fetched from the API using your access token.
+          This information is securely fetched through the BFF using your server-side session.
         </p>
       </div>
     </div>

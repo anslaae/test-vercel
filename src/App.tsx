@@ -2,7 +2,6 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './auth/useAuth';
 import Dashboard from './routes/Dashboard';
 import TaskPage from './routes/TaskPage';
-import Callback from './routes/Callback';
 import LoginPage from './routes/LoginPage';
 import './styles.css';
 
@@ -21,7 +20,7 @@ function Protected({ children }: { children: JSX.Element }) {
     );
   }
 
-  if (!isAuthenticated) return <Navigate to="/login" state={{ from: loc }} replace />;
+  if (!isAuthenticated) return <Navigate to="/login" state={{ from: loc.pathname }} replace />;
   return children;
 }
 
@@ -30,7 +29,6 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Navigate to="/me" replace />} />
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/oauth/callback" element={<Callback />} />
       <Route path="/me" element={<Protected><Dashboard /></Protected>} />
       <Route path="/task/:id" element={<Protected><TaskPage /></Protected>} />
     </Routes>

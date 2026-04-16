@@ -72,3 +72,5 @@ coverage/
 # Ignore local eslint cache
 /.eslintcache
 
+.vercel
+.env*.local

@@ -1,53 +1,65 @@
-// Simple BFF proxy for Vercel
-// Forwards requests to different API bases depending on the path
+import { ServerResponse } from 'http';
+import { ensureActiveSession, deleteSessionById, getClearedSessionCookieHeader, getSessionIdFromRequest } from './shared/session';
+import { getRequestUrl, readRawBody, sendJson, type VercelRequest } from './shared/http';
 
-import { IncomingMessage, ServerResponse } from 'http';
+const AUTH_API_BASE = (process.env.AUTH_API_BASE || 'https://api.devtest.catalystone.dev').replace(/\/+$/, '');
+const USER_API_BASE = (process.env.USER_API_BASE || 'https://api.devtest.catalystone.io').replace(/\/+$/, '');
+const DEDICATED_AUTH_PATHS = new Set(['/auth-login', '/auth-callback', '/auth-session', '/auth-logout']);
 
-const AUTH_API_BASE = process.env.AUTH_API_BASE || 'https://api.devtest.catalystone.dev';
-const USER_API_BASE = process.env.USER_API_BASE || 'https://api.devtest.catalystone.io';
+function getForwardHeader(req: VercelRequest, headerName: string) {
+  const value = req.headers[headerName.toLowerCase()];
+  if (!value) {
+    return undefined;
+  }
 
-interface VercelRequest extends IncomingMessage {
-  query: Record<string, string | string[]>;
-  cookies: Record<string, string>;
-  body: any;
+  return Array.isArray(value) ? value.join(', ') : value;
 }
 
 export default async function handler(req: VercelRequest, res: ServerResponse) {
-  // Extract path from URL - remove /api prefix
-  const path = req.url?.replace(/^\/api/, '') || '/';
+  const requestUrl = getRequestUrl(req);
+  const path = requestUrl.pathname.replace(/^\/api/, '') || '/';
 
-  // Route to appropriate API based on path
-  let targetBase = USER_API_BASE;
-  if (path.startsWith('/auth2/') || path.startsWith('/oauth')) {
-    targetBase = AUTH_API_BASE;
+  if (DEDICATED_AUTH_PATHS.has(path)) {
+    sendJson(res, 404, { error: 'Use the dedicated auth endpoint for this route' });
+    return;
   }
 
-  const targetUrl = `${targetBase}${path}`;
+  const session = await ensureActiveSession(req);
+  if (!session) {
+    const headers: Record<string, string> = {
+      'Cache-Control': 'no-store'
+    };
 
-  console.log(`[Proxy] ${req.method} ${req.url} → ${targetUrl}`);
-
-  // Read body if present
-  let body: Buffer | undefined;
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    const chunks: Buffer[] = [];
-    for await (const chunk of req) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    if (getSessionIdFromRequest(req)) {
+      headers['Set-Cookie'] = getClearedSessionCookieHeader(req);
     }
-    body = chunks.length > 0 ? Buffer.concat(chunks) : undefined;
+
+    sendJson(res, 401, { error: 'Unauthenticated' }, headers);
+    return;
   }
 
-  // Forward headers from client
-  const headers: Record<string, string> = {};
-  if (req.headers['content-type']) {
-    headers['Content-Type'] = req.headers['content-type'] as string;
-  }
-  if (req.headers['authorization']) {
-    headers['Authorization'] = req.headers['authorization'] as string;
-  }
+  const targetBase = path.startsWith('/auth2/') || path.startsWith('/oauth')
+    ? AUTH_API_BASE
+    : USER_API_BASE;
+  const targetUrl = `${targetBase}${path}${requestUrl.search}`;
 
-  console.log(`[Proxy] Headers:`, headers);
-  if (body) {
-    console.log(`[Proxy] Body: ${body.toString('utf-8')}`);
+  console.log(`[Proxy] ${req.method} ${requestUrl.pathname}${requestUrl.search} → ${targetUrl}`);
+
+  const body = req.method !== 'GET' && req.method !== 'HEAD'
+    ? await readRawBody(req)
+    : undefined;
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${session.accessToken}`
+  };
+
+  const contentType = getForwardHeader(req, 'content-type');
+  const accept = getForwardHeader(req, 'accept');
+  if (contentType) {
+    headers['Content-Type'] = contentType;
+  }
+  if (accept) {
+    headers.Accept = accept;
   }
 
   try {
@@ -57,39 +69,26 @@ export default async function handler(req: VercelRequest, res: ServerResponse) {
       body
     });
 
-    console.log(`[Proxy] Response: ${response.status} ${response.statusText}`);
+    const responseBuffer = Buffer.from(await response.arrayBuffer());
 
-    // Send response body
-    const responseBody = await response.arrayBuffer();
-    const responseBuffer = Buffer.from(responseBody);
-
-    // Log response body
-    console.log(`[Proxy] Response body (${responseBuffer.length} bytes):`, responseBuffer.toString('utf-8'));
-
-    // Forward response
     res.statusCode = response.status;
 
-    // Copy response headers, but exclude compression headers
-    // (fetch() automatically decompresses, but headers still indicate compression)
-    const headersToSkip = ['content-encoding', 'transfer-encoding', 'content-length'];
+    const headersToSkip = new Set(['content-encoding', 'transfer-encoding', 'content-length', 'set-cookie']);
     response.headers.forEach((value, key) => {
-      if (!headersToSkip.includes(key.toLowerCase())) {
+      if (!headersToSkip.has(key.toLowerCase())) {
         res.setHeader(key, value);
       }
     });
 
-    // Add CORS headers
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (response.status === 401) {
+      await deleteSessionById(session.id);
+      res.setHeader('Set-Cookie', getClearedSessionCookieHeader(req));
+    }
 
     res.end(responseBuffer);
-
   } catch (error) {
-    console.error(`[Proxy] Error:`, error);
-    res.statusCode = 500;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ error: 'Proxy request failed' }));
+    console.error('[Proxy] Request failed', error);
+    sendJson(res, 502, { error: 'Proxy request failed' }, { 'Cache-Control': 'no-store' });
   }
 }
 

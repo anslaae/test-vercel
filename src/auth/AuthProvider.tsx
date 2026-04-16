@@ -1,77 +1,76 @@
-import React, { createContext, useEffect, useState } from 'react';
-import { getStoredTokens, clearTokens, Tokens, startLogin, KEY } from './oauth';
+import React, { createContext, useCallback, useEffect, useState } from 'react';
+import { endSession, getSession, SessionInfo, startLogin } from './oauth';
 
 interface AuthCtx {
-  tokens: Tokens | null;
+  session: SessionInfo | null;
   isAuthenticated: boolean;
   loading: boolean;
-  login: () => void;
-  logout: () => void;
+  login: (returnTo?: string) => void;
+  logout: (returnTo?: string) => Promise<void>;
+  refreshSession: () => Promise<SessionInfo | null>;
 }
 
 export const AuthContext = createContext<AuthCtx>({
-  tokens: null,
+  session: null,
   isAuthenticated: false,
   loading: true,
   login: () => {},
-  logout: () => {}
+  logout: async () => {},
+  refreshSession: async () => null
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [tokens, setTokens] = useState<Tokens | null>(null);
+  const [session, setSession] = useState<SessionInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const refreshSession = useCallback(async () => {
+    try {
+      console.log('[AuthProvider] Refreshing BFF session state');
+      const nextSession = await getSession();
+      setSession(nextSession);
+      return nextSession;
+    } catch (error) {
+      console.error('[AuthProvider] Failed to refresh session', error);
+      setSession(null);
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
-    console.log('[AuthProvider] Initializing, checking for stored tokens');
-    const storedTokens = getStoredTokens();
-    console.log('[AuthProvider] Stored tokens:', {
-      hasTokens: !!storedTokens,
-      isAuthenticated: !!storedTokens,
-      expiresAt: storedTokens?.expires_at
+    refreshSession().finally(() => {
+      setLoading(false);
     });
-    setTokens(storedTokens);
-    setLoading(false);
+  }, [refreshSession]);
+
+  const logout = useCallback(async (returnTo = '/login') => {
+    console.log('[AuthProvider] Logging out from BFF session');
+
+    try {
+      await endSession();
+    } catch (error) {
+      console.error('[AuthProvider] Logout request failed', error);
+    } finally {
+      setSession(null);
+      globalThis.location.assign(returnTo);
+    }
   }, []);
 
-  // Listen for custom event and storage changes to keep tokens in sync
-  useEffect(() => {
-    const update = () => {
-      console.log('[AuthProvider] Token update event received');
-      const updatedTokens = getStoredTokens();
-      console.log('[AuthProvider] Updated tokens:', {
-        hasTokens: !!updatedTokens,
-        isAuthenticated: !!updatedTokens
-      });
-      setTokens(updatedTokens);
-    };
-    window.addEventListener('oauth_tokens_updated', update);
-    const storageHandler = (e: StorageEvent) => {
-      if (e.key === KEY) {
-        console.log('[AuthProvider] Storage event for oauth tokens');
-        update();
-      }
-    };
-    window.addEventListener('storage', storageHandler);
-    return () => {
-      window.removeEventListener('oauth_tokens_updated', update);
-      window.removeEventListener('storage', storageHandler);
-    };
+  const login = useCallback((returnTo?: string) => {
+    console.log('[AuthProvider] Redirecting to BFF login');
+    startLogin(returnTo);
   }, []);
-
-  const logout = () => {
-    console.log('[AuthProvider] Logout called');
-    clearTokens();
-    setTokens(null);
-    console.log('[AuthProvider] Tokens cleared');
-  };
-
-  const login = () => {
-    console.log('[AuthProvider] Login called, starting OAuth flow');
-    startLogin();
-  };
 
   return (
-    <AuthContext.Provider value={{ tokens, isAuthenticated: !!tokens, loading, login, logout }}>
+    <AuthContext.Provider
+      value={{
+        session,
+        isAuthenticated: !!session,
+        loading,
+        login,
+        logout,
+        refreshSession
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -1,9 +1,16 @@
 import * as React from 'react';
+import { useLocation } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import '../styles.css';
 
 const LoginPage: React.FC = () => {
-  const { login, isAuthenticated, tokens, loading } = useAuth();
+  const { login, isAuthenticated, loading } = useAuth();
+  const location = useLocation();
+  const returnTo =
+    typeof location.state === 'object' && location.state && 'from' in location.state && typeof location.state.from === 'string'
+      ? location.state.from
+      : '/me';
+  const error = new URLSearchParams(location.search).get('error');
 
   if (loading) {
     return (
@@ -40,7 +47,9 @@ const LoginPage: React.FC = () => {
           <p className="login-subtitle">Sign in to access your personal dashboard</p>
         </div>
 
-        <button onClick={login} className="login-button primary-button">
+          {error && <p className="error-message">{error}</p>}
+
+        <button onClick={() => login(returnTo)} className="login-button primary-button">
           <span className="button-icon">🚀</span>
           Sign In with OAuth
         </button>
@@ -63,10 +72,10 @@ const LoginPage: React.FC = () => {
         <details className="technical-details">
           <summary>Technical Details</summary>
           <ul className="details-list">
-            <li>OAuth 2.0 with PKCE flow for enhanced security</li>
-            <li>State parameter for CSRF protection</li>
-            <li>Secure token exchange on callback</li>
-            <li>Encrypted local storage for session data</li>
+            <li>OAuth 2.0 + PKCE is handled entirely by Vercel functions</li>
+            <li>Access and refresh tokens stay server-side only</li>
+            <li>Your browser only keeps an HttpOnly session cookie</li>
+            <li>Authenticated API calls flow through the BFF proxy</li>
           </ul>
         </details>
       </div>

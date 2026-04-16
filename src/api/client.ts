@@ -1,26 +1,35 @@
-// API client for making authenticated requests through the BFF proxy
+const API_BASE = '/api';
 
-import { getStoredTokens } from '../auth/oauth';
-
-const API_BASE = '/api'; // Proxy base path
-
-export async function getUserInfo() {
-  const tokens = getStoredTokens();
-  if (!tokens) {
-    throw new Error('No access token available');
+export class UnauthorizedError extends Error {
+  constructor() {
+    super('Your session has expired. Please sign in again.');
+    this.name = 'UnauthorizedError';
   }
+}
 
-  const response = await fetch(`${API_BASE}/personal-details/me`, {
-    method: 'GET',
+async function request(path: string, init?: RequestInit) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    credentials: 'include',
+    ...init,
     headers: {
-      'Authorization': `Bearer ${tokens.access_token}`
+      Accept: 'application/json',
+      ...(init?.headers || {})
     }
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to fetch user info: ${response.status}`);
+  if (response.status === 401) {
+    throw new UnauthorizedError();
   }
 
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.status}`);
+  }
+
+  return response;
+}
+
+export async function getUserInfo() {
+  const response = await request('/personal-details/me');
   return response.json();
 }
 
