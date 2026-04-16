@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './auth/useAuth';
 import Dashboard from './routes/Dashboard';
@@ -7,7 +8,7 @@ import LoginPage from './routes/LoginPage';
 import NotFound from './routes/NotFound';
 import './styles.css';
 
-function Protected({ children }: { children: JSX.Element }) {
+function Protected({ children }: { children: ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
   const loc = useLocation();
 
