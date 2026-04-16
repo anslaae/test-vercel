@@ -1,22 +1,19 @@
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 /**
- * This route is kept as a safety net only.
- * The OAuth callback is handled server-side by /api/auth-callback which sets the
- * HttpOnly session cookie and redirects the browser straight to /me (or returnTo).
- * If the browser somehow lands here, forward it on immediately.
+ * Compatibility route for OAuth providers still configured with /oauth/callback.
+ * Forward the browser to the server-side callback endpoint with the original query
+ * string so BFF can exchange the code and set the HttpOnly session cookie.
  */
 const Callback: React.FC = () => {
-  const nav = useNavigate();
-
   useEffect(() => {
-    nav('/me', { replace: true });
-  }, [nav]);
+    const query = globalThis.location.search || '';
+    globalThis.location.replace(`/api/auth-callback${query}`);
+  }, []);
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-      <p>Completing sign-in…</p>
+      <p>Completing sign-in...</p>
     </div>
   );
 };
