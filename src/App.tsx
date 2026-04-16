@@ -4,6 +4,7 @@ import Dashboard from './routes/Dashboard';
 import TaskPage from './routes/TaskPage';
 import Callback from './routes/Callback';
 import LoginPage from './routes/LoginPage';
+import NotFound from './routes/NotFound';
 import './styles.css';
 
 function Protected({ children }: { children: JSX.Element }) {
@@ -33,6 +34,7 @@ export default function App() {
       <Route path="/oauth/callback" element={<Callback />} />
       <Route path="/me" element={<Protected><Dashboard /></Protected>} />
       <Route path="/task/:id" element={<Protected><TaskPage /></Protected>} />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }

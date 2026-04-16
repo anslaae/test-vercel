@@ -97,6 +97,20 @@ body {
   }
 }
 
+.not-found-icon {
+  font-size: 4rem;
+  font-weight: 700;
+  color: var(--error-color);
+  margin-bottom: 1rem;
+}
+
+.not-found-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
 .login-header {
   text-align: center;
   margin-bottom: 2.5rem;
@@ -699,6 +713,10 @@ body {
 
   .dashboard-container {
     padding: 1rem;
+  }
+
+  .not-found-actions {
+    grid-template-columns: 1fr;
   }
 }
 
