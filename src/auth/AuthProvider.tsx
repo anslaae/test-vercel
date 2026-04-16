@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useEffect, useState } from 'react';
-import { endSession, getSession, SessionInfo, startLogin } from './oauth';
+import type { SessionInfo} from './oauth';
+import { endSession, getSession, startLogin } from './oauth';
 
 interface AuthCtx {
   session: SessionInfo | null;

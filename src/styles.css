@@ -579,7 +579,9 @@ body {
   margin-top: 1rem;
   display: grid;
   gap: 1rem;
-}  .token-details {
+}
+
+.token-details {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   overflow: hidden;

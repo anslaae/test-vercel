@@ -1,4 +1,4 @@
-import { ServerResponse } from 'http';
+import type { ServerResponse } from 'http';
 import { deleteSession, getClearedSessionCookieHeader } from '../shared/session.js';
 import { getRequestUrl, redirect, safeReturnTo, sendJson, type VercelRequest } from '../shared/http.js';
 

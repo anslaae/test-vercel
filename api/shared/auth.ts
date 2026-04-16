@@ -52,17 +52,26 @@ export function generatePkceChallenge(verifier: string) {
   return createHash('sha256').update(verifier).digest('base64url');
 }
 
-function normalizeTokenResponse(payload: any): TokenSet {
-  if (!payload?.access_token) {
+interface TokenResponsePayload {
+  access_token?: string;
+  refresh_token?: string;
+  id_token?: string;
+  expires_in?: number | string;
+}
+
+function normalizeTokenResponse(payload: unknown): TokenSet {
+  const tokenPayload = (payload ?? {}) as TokenResponsePayload;
+
+  if (!tokenPayload.access_token) {
     throw new Error('Token response did not include an access_token');
   }
 
-  const expiresIn = Number(payload.expires_in ?? 3600);
+  const expiresIn = Number(tokenPayload.expires_in ?? 3600);
 
   return {
-    accessToken: payload.access_token,
-    refreshToken: payload.refresh_token,
-    idToken: payload.id_token,
+    accessToken: tokenPayload.access_token,
+    refreshToken: tokenPayload.refresh_token,
+    idToken: tokenPayload.id_token,
     expiresAt: Date.now() + Math.max(0, expiresIn - 30) * 1000
   };
 }

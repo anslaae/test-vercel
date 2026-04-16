@@ -1,7 +1,7 @@
 import { getAuthConfig, generatePkceChallenge, generatePkceVerifier } from '../shared/auth.js';
 import { createOAuthTransaction, getOAuthTransactionCookieHeader } from '../shared/session.js';
 import { getRequestUrl, redirect, safeReturnTo, sendJson, type VercelRequest } from '../shared/http.js';
-import { ServerResponse } from 'http';
+import type { ServerResponse } from 'http';
 
 export default async function handler(req: VercelRequest, res: ServerResponse) {
   if (req.method !== 'GET') {
