@@ -90,7 +90,7 @@ const LoginPage: React.FC = () => {
       {showStep1Dialog && (
         <FlowDebugDialog
           step={1}
-          totalSteps={3}
+          totalSteps={4}
           title="Initiating OAuth 2.0 Authorization Code Flow"
           description="Your browser is about to be redirected to the authorization server. The BFF will generate a PKCE code verifier (random secret) and its SHA-256 challenge, and store a signed state token in an HttpOnly cookie to protect against CSRF attacks. You will then be asked to authenticate at the authorization server."
           details={step1Details}
@@ -192,7 +192,8 @@ const LoginPage: React.FC = () => {
                    </label>
                    <p className="login-option-hint">
                      Pause at each stage of the Authorization Code flow and inspect what's
-                     happening before continuing to the next step.
+                      happening before continuing to the next step, including the first
+                      protected API call after sign-in.
                    </p>
                  </div>
                )}

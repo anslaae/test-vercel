@@ -40,7 +40,7 @@ export default function Callback() {
     return (
       <FlowDebugDialog
         step={2}
-        totalSteps={3}
+        totalSteps={4}
         title="Authorization Code Received"
         description="The authorization server has redirected your browser back with a one-time authorization code. Clicking Continue will forward this code to the BFF, which will exchange it for access, ID, and refresh tokens using the stored PKCE verifier. The tokens never reach your browser."
         details={[

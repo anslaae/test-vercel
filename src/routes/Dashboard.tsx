@@ -9,7 +9,9 @@ import '../styles.css';
 export default function Dashboard() {
     const [userInfo, setUserInfo] = useState<Record<string, unknown> | null>(null);
     const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(
+        () => sessionStorage.getItem('oauth_debug') !== '1'
+    );
     const [error, setError] = useState<string | null>(null);
     const [refreshingUserData, setRefreshingUserData] = useState(false);
     const [refreshingSessionData, setRefreshingSessionData] = useState(false);
@@ -31,6 +33,10 @@ export default function Dashboard() {
     const [showStep3Dialog, setShowStep3Dialog] = useState(
         () => sessionStorage.getItem('oauth_debug') === '1'
     );
+    const [showStep4Dialog, setShowStep4Dialog] = useState(false);
+    const [allowInitialDashboardLoad, setAllowInitialDashboardLoad] = useState(
+        () => sessionStorage.getItem('oauth_debug') !== '1'
+    );
     const [showAppInfo, setShowAppInfo] = useState(false);
     const [showRefreshExplainDialog, setShowRefreshExplainDialog] = useState(false);
     const [showRefreshCompleteDialog, setShowRefreshCompleteDialog] = useState(false);
@@ -48,18 +54,34 @@ export default function Dashboard() {
     };
 
     const handleDismissStep3 = () => {
-        sessionStorage.removeItem('oauth_debug');
         setShowStep3Dialog(false);
+        setShowStep4Dialog(true);
+    };
+
+    const handleDismissStep4 = () => {
+        sessionStorage.removeItem('oauth_debug');
+        setShowStep4Dialog(false);
+        setAllowInitialDashboardLoad(true);
     };
 
     useEffect(() => {
+        if (!allowInitialDashboardLoad) {
+            return;
+        }
+
         let active = true;
+
+        async function fetchDashboardData() {
+            return Promise.all([getUserInfo(), getSessionDetails()]);
+        }
 
         async function fetchUserInfo() {
             try {
                 setLoading(true);
                 setError(null);
-                const [userData, sessionData] = await Promise.all([getUserInfo(), getSessionDetails()]);
+
+                let [userData, sessionData] = await fetchDashboardData();
+
                 if (!active) {
                     return;
                 }
@@ -68,8 +90,36 @@ export default function Dashboard() {
                 setSessionDetails(sessionData);
             } catch (err) {
                 if (err instanceof UnauthorizedError) {
-                    await refreshSession();
-                    return;
+                    const nextSession = await refreshSession();
+
+                    if (!active) {
+                        return;
+                    }
+
+                    if (!nextSession) {
+                        setError('Your session has expired. Please sign in again.');
+                        return;
+                    }
+
+                    try {
+                        const [userData, sessionData] = await fetchDashboardData();
+
+                        if (!active) {
+                            return;
+                        }
+
+                        setUserInfo(userData);
+                        setSessionDetails(sessionData);
+                        return;
+                    } catch (retryError) {
+                        if (!active) {
+                            return;
+                        }
+
+                        console.error('[Dashboard] Failed to fetch user info after refreshing session:', retryError);
+                        setError(retryError instanceof Error ? retryError.message : 'Failed to load user info');
+                        return;
+                    }
                 }
 
                 if (!active) {
@@ -90,7 +140,7 @@ export default function Dashboard() {
         return () => {
             active = false;
         };
-    }, [refreshSession]);
+    }, [allowInitialDashboardLoad, refreshSession]);
 
     const handleRefreshUserData = () => {
         setShowUserDataExplainDialog(true);
@@ -159,6 +209,51 @@ export default function Dashboard() {
             setRefreshingSessionData(false);
         }
     };
+
+    const isBlockedByLoginDebugger = !allowInitialDashboardLoad && (showStep3Dialog || showStep4Dialog);
+
+    if (isBlockedByLoginDebugger) {
+        return (
+            <div className="dashboard-container">
+                {showStep3Dialog && (
+                    <FlowDebugDialog
+                        step={3}
+                        totalSteps={4}
+                        title="Login Complete — Tokens Exchanged"
+                        description="The BFF has successfully exchanged the authorization code for tokens at the authorization server's token endpoint. Your access token, ID token, and refresh token (if issued) are stored securely server-side. Only an HttpOnly session cookie was set in your browser — no tokens ever reached the client."
+                        details={[
+                            {label: 'Tokens stored', value: 'Server-side only (BFF)'},
+                            {label: 'Browser receives', value: 'HttpOnly session cookie'},
+                            {label: 'PKCE verifier', value: 'Consumed and discarded'},
+                            {label: 'Next step', value: 'Dashboard requests personal details through the BFF'},
+                            ...(customState ? [{label: 'Your custom state value', value: customState}] : [])
+                        ]}
+                        onContinue={handleDismissStep3}
+                    />
+                )}
+                {showStep4Dialog && (
+                    <FlowDebugDialog
+                        step={4}
+                        totalSteps={4}
+                        title="Calling the Personal Details API"
+                        description="The dashboard is now ready to load your information. Clicking Continue will trigger a browser request to the BFF. The browser sends only your HttpOnly session cookie, and the BFF adds the access token before calling the protected personal-details API. If the token has expired, the BFF can refresh it server-side before forwarding the request."
+                        details={[
+                            {label: 'Browser request', value: 'GET /api/personal-details/me'},
+                            {label: 'Browser sends', value: 'Session cookie only' },
+                            {label: 'BFF adds', value: 'Bearer access token' },
+                            {label: 'Protected API', value: 'personal-details /me endpoint' },
+                            {label: 'Token refresh', value: 'Handled server-side if needed' }
+                        ]}
+                        onContinue={handleDismissStep4}
+                    />
+                )}
+
+                <div className="dashboard-card">
+                    <p className="loading-text">Waiting for debugger step to continue...</p>
+                </div>
+            </div>
+        );
+    }
 
     if (loading) {
         return (
@@ -329,16 +424,33 @@ export default function Dashboard() {
             {showStep3Dialog && (
                 <FlowDebugDialog
                     step={3}
-                    totalSteps={3}
+                    totalSteps={4}
                     title="Login Complete — Tokens Exchanged"
                     description="The BFF has successfully exchanged the authorization code for tokens at the authorization server's token endpoint. Your access token, ID token, and refresh token (if issued) are stored securely server-side. Only an HttpOnly session cookie was set in your browser — no tokens ever reached the client."
                     details={[
                         {label: 'Tokens stored', value: 'Server-side only (BFF)'},
                         {label: 'Browser receives', value: 'HttpOnly session cookie'},
                         {label: 'PKCE verifier', value: 'Consumed and discarded'},
+                        {label: 'Next step', value: 'Dashboard requests personal details through the BFF'},
                         ...(customState ? [{label: 'Your custom state value', value: customState}] : [])
                     ]}
                     onContinue={handleDismissStep3}
+                />
+            )}
+            {showStep4Dialog && (
+                <FlowDebugDialog
+                    step={4}
+                    totalSteps={4}
+                    title="Calling the Personal Details API"
+                    description="The dashboard is now ready to load your information. Clicking Continue will trigger a browser request to the BFF. The browser sends only your HttpOnly session cookie, and the BFF adds the access token before calling the protected personal-details API. If the token has expired, the BFF can refresh it server-side before forwarding the request."
+                    details={[
+                        {label: 'Browser request', value: 'GET /api/personal-details/me'},
+                        {label: 'Browser sends', value: 'Session cookie only' },
+                        {label: 'BFF adds', value: 'Bearer access token' },
+                        {label: 'Protected API', value: 'personal-details /me endpoint' },
+                        {label: 'Token refresh', value: 'Handled server-side if needed' }
+                    ]}
+                    onContinue={handleDismissStep4}
                 />
             )}
             {showRefreshExplainDialog && (
