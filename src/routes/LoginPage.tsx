@@ -20,8 +20,8 @@ const LoginPage: React.FC = () => {
   const [showStep1Dialog, setShowStep1Dialog] = React.useState(false);
   const [showCustomStateError, setShowCustomStateError] = React.useState(false);
   const [showAppInfo, setShowAppInfo] = React.useState(false);
-  const [expandCustomState, setExpandCustomState] = React.useState(true);
-  const [expandDebugger, setExpandDebugger] = React.useState(true);
+  const [expandCustomState, setExpandCustomState] = React.useState(false);
+  const [expandDebugger, setExpandDebugger] = React.useState(false);
 
   const customStateValidation = React.useMemo(
     () => validateCustomState(customStateText),
