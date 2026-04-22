@@ -35,6 +35,9 @@ export default function Dashboard() {
   const [showRefreshExplainDialog, setShowRefreshExplainDialog] = useState(false);
   const [showRefreshCompleteDialog, setShowRefreshCompleteDialog] = useState(false);
   const [refreshDialogDetails, setRefreshDialogDetails] = useState<Array<{ label: string; value: string }>>([]);
+  const [showUserDataExplainDialog, setShowUserDataExplainDialog] = useState(false);
+  const [showUserDataCompleteDialog, setShowUserDataCompleteDialog] = useState(false);
+  const [userDataDialogDetails, setUserDataDialogDetails] = useState<Array<{ label: string; value: string }>>([]);
 
   const formatTimestamp = (timestampMs?: number) => {
     if (!timestampMs || Number.isNaN(timestampMs)) {
@@ -89,12 +92,25 @@ export default function Dashboard() {
     };
   }, [refreshSession]);
 
-  const handleRefreshUserData = async () => {
+  const handleRefreshUserData = () => {
+    setShowUserDataExplainDialog(true);
+  };
+
+  const runRefreshUserData = async () => {
     try {
       setRefreshingUserData(true);
       setError(null);
       const userData = await getUserInfo();
       setUserInfo(userData);
+
+      const currentAccessExpiry = sessionDetails?.tokens.access.expiresAt;
+      setUserDataDialogDetails([
+        { label: 'Request endpoint', value: 'GET /api/personal-details/me' },
+        { label: 'Authorization header', value: 'Bearer <access_token>' },
+        { label: 'BFF token management', value: 'Automatic refresh if needed' },
+        { label: 'Current access token expiry', value: formatTimestamp(currentAccessExpiry) }
+      ]);
+      setShowUserDataCompleteDialog(true);
     } catch (err) {
       if (err instanceof UnauthorizedError) {
         await refreshSession();
@@ -351,6 +367,34 @@ export default function Dashboard() {
           description="The BFF stored the refreshed tokens server-side and updated your session. The dashboard now shows the latest token metadata from the BFF."
           details={refreshDialogDetails}
           onContinue={() => setShowRefreshCompleteDialog(false)}
+        />
+      )}
+      {showUserDataExplainDialog && (
+        <FlowDebugDialog
+          step={1}
+          totalSteps={2}
+          title="Fetching Personal Data Through BFF"
+          description="Clicking Continue will request your personal details from the backend API. Your browser sends only the session cookie; the BFF automatically attaches the access token to the request. If the access token has expired, the BFF will silently refresh it using the refresh token before forwarding your request."
+          details={[
+            { label: 'Request flow', value: 'Browser → BFF → Backend API' },
+            { label: 'Session cookie', value: 'Sent with request (HttpOnly)' },
+            { label: 'Access token', value: 'Attached by BFF (never exposed to browser)' },
+            { label: 'Auto-refresh', value: 'BFF refreshes if token expired' }
+          ]}
+          onContinue={() => {
+            setShowUserDataExplainDialog(false);
+            void runRefreshUserData();
+          }}
+        />
+      )}
+      {showUserDataCompleteDialog && (
+        <FlowDebugDialog
+          step={2}
+          totalSteps={2}
+          title="Personal Data Retrieved"
+          description="The BFF successfully forwarded your request to the backend API using your access token. Your personal information is now displayed above."
+          details={userDataDialogDetails}
+          onContinue={() => setShowUserDataCompleteDialog(false)}
         />
       )}
       <AppInfoModal open={showAppInfo} onClose={() => setShowAppInfo(false)} />
