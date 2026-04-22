@@ -3,6 +3,7 @@ import { getSessionDetails, getUserInfo, UnauthorizedError } from '../api/client
 import useAuth from '../auth/useAuth';
 import type { SessionDetails } from '../types/api';
 import FlowDebugDialog from '../components/FlowDebugDialog';
+import AppInfoModal from '../components/AppInfoModal';
 import '../styles.css';
 
 export default function Dashboard() {
@@ -30,6 +31,7 @@ export default function Dashboard() {
   const [showStep3Dialog, setShowStep3Dialog] = useState(
     () => sessionStorage.getItem('oauth_debug') === '1'
   );
+  const [showAppInfo, setShowAppInfo] = useState(false);
 
   const handleDismissStep3 = () => {
     sessionStorage.removeItem('oauth_debug');
@@ -301,6 +303,7 @@ export default function Dashboard() {
           onContinue={handleDismissStep3}
         />
       )}
+      <AppInfoModal open={showAppInfo} onClose={() => setShowAppInfo(false)} />
 
       <div className="dashboard-header">
         <div>
@@ -309,6 +312,13 @@ export default function Dashboard() {
             Welcome to Your Dashboard
           </h1>
           <p className="dashboard-subtitle">Here's your personal information</p>
+          <button
+            type="button"
+            className="learn-more-link learn-more-link-dashboard"
+            onClick={() => setShowAppInfo(true)}
+          >
+            Learn how this demo works
+          </button>
         </div>
         <button onClick={() => logout()} className="logout-button">
           <span>Sign Out</span>

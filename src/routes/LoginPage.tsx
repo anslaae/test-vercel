@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useLocation } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import FlowDebugDialog from '../components/FlowDebugDialog';
+import AppInfoModal from '../components/AppInfoModal';
 import { CUSTOM_STATE_MAX_LENGTH, validateCustomState } from '../../shared/customState';
 import '../styles.css';
 
@@ -18,6 +19,7 @@ const LoginPage: React.FC = () => {
   const [debugMode, setDebugMode] = React.useState(false);
   const [showStep1Dialog, setShowStep1Dialog] = React.useState(false);
   const [showCustomStateError, setShowCustomStateError] = React.useState(false);
+  const [showAppInfo, setShowAppInfo] = React.useState(false);
 
   const customStateValidation = React.useMemo(
     () => validateCustomState(customStateText),
@@ -93,12 +95,20 @@ const LoginPage: React.FC = () => {
           onContinue={() => { setShowStep1Dialog(false); doLogin(); }}
         />
       )}
+      <AppInfoModal open={showAppInfo} onClose={() => setShowAppInfo(false)} />
       <div className="login-container">
         <div className="login-card">
           <div className="login-header">
             <div className="logo-icon">🔐</div>
             <h1 className="login-title">Welcome</h1>
             <p className="login-subtitle">Sign in to access your personal dashboard</p>
+            <button
+              type="button"
+              className="learn-more-link"
+              onClick={() => setShowAppInfo(true)}
+            >
+              Learn how this demo works
+            </button>
           </div>
 
           {error && <p className="error-message">{error}</p>}
