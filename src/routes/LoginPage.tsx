@@ -203,17 +203,6 @@ const LoginPage: React.FC = () => {
             <span className="button-icon">🚀</span>
             Sign In with OAuth
           </button>
-
-
-          <details className="technical-details">
-            <summary>Technical Details</summary>
-            <ul className="details-list">
-              <li>OAuth 2.0 + PKCE is handled entirely by Vercel functions</li>
-              <li>Access and refresh tokens stay server-side only</li>
-              <li>Your browser only keeps an HttpOnly session cookie</li>
-              <li>Authenticated API calls flow through the BFF proxy</li>
-            </ul>
-          </details>
         </div>
       </div>
     </>

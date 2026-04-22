@@ -212,35 +212,6 @@ body {
   font-size: 1.2rem;
 }
 
-.technical-details {
-  margin-top: 2rem;
-  padding: 1rem;
-  background: var(--bg-light);
-  border-radius: var(--radius);
-  cursor: pointer;
-}
-
-.technical-details summary {
-  font-weight: 600;
-  color: var(--text-secondary);
-  cursor: pointer;
-  user-select: none;
-}
-
-.technical-details summary:hover {
-  color: var(--text-primary);
-}
-
-.details-list {
-  margin-top: 1rem;
-  padding-left: 1.5rem;
-  color: var(--text-secondary);
-  line-height: 1.8;
-}
-
-.details-list li {
-  margin-bottom: 0.5rem;
-}
 
 /* Dashboard Styles */
 .dashboard-container {
