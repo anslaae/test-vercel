@@ -843,7 +843,57 @@ body {
   background: var(--bg-light);
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.login-option-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   padding: 1rem;
+  background: var(--bg-light);
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  text-align: left;
+  transition: background-color 0.2s ease;
+}
+
+.login-option-header:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.login-option-header-icon {
+  display: inline-block;
+  font-size: 0.75rem;
+  transition: transform 0.2s ease;
+  color: var(--primary-color);
+  flex-shrink: 0;
+}
+
+.login-option-header-title {
+  flex: 1;
+}
+
+.login-option-content {
+  padding: 1rem;
+  background: var(--bg-white);
+  border-top: 1px solid var(--border-color);
+  animation: expandCollapse 0.2s ease-out;
+}
+
+@keyframes expandCollapse {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 1000px;
+  }
 }
 
 .login-option-label {
@@ -940,6 +990,15 @@ body {
   height: 1rem;
   accent-color: var(--primary-color);
   cursor: pointer;
+}
+
+.login-option-checkbox-group .login-option-header {
+  background: var(--bg-light);
+}
+
+.login-option-checkbox-group .login-option-content {
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── Custom state banner (dashboard) ──────────────────────────── */

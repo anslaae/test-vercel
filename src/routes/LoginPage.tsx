@@ -20,6 +20,8 @@ const LoginPage: React.FC = () => {
   const [showStep1Dialog, setShowStep1Dialog] = React.useState(false);
   const [showCustomStateError, setShowCustomStateError] = React.useState(false);
   const [showAppInfo, setShowAppInfo] = React.useState(false);
+  const [expandCustomState, setExpandCustomState] = React.useState(true);
+  const [expandDebugger, setExpandDebugger] = React.useState(true);
 
   const customStateValidation = React.useMemo(
     () => validateCustomState(customStateText),
@@ -111,60 +113,91 @@ const LoginPage: React.FC = () => {
             </button>
           </div>
 
-          {error && <p className="error-message">{error}</p>}
+           {error && <p className="error-message">{error}</p>}
 
-          <div className="login-options">
-            <div className="login-option-group">
-              <label className="login-option-label" htmlFor="custom-state">
-                Custom State Parameter <span className="login-option-optional">(optional)</span>
-              </label>
-              <p className="login-option-hint">
-                Text entered here is embedded in the OAuth <code>state</code> parameter and
-                returned to you after login — demonstrating how application context can
-                survive the redirect round-trip.
-              </p>
-              <p className="login-option-warning">
-                Do not enter secrets or personal data. State values may appear in browser URLs,
-                logs, and monitoring tools.
-              </p>
-              <input
-                id="custom-state"
-                type="text"
-                className="login-option-input"
-                placeholder="e.g. hello-world"
-                value={customStateText}
-                maxLength={CUSTOM_STATE_MAX_LENGTH}
-                onChange={e => {
-                  setCustomStateText(e.target.value);
-                  if (showCustomStateError) {
-                    setShowCustomStateError(false);
-                  }
-                }}
-              />
-              <div className="login-option-meta">
-                <span>{customStateText.length}/{CUSTOM_STATE_MAX_LENGTH}</span>
-                <span>Allowed: letters, numbers, spaces, dot, dash, underscore</span>
-              </div>
-              {showCustomStateError && !customStateValidation.valid && (
-                <p className="login-option-error">{customStateValidation.error}</p>
-              )}
-            </div>
+           <div className="login-options">
+             <div className="login-option-group">
+               <button
+                 type="button"
+                 className="login-option-header"
+                 onClick={() => setExpandCustomState(!expandCustomState)}
+                 aria-expanded={expandCustomState}
+               >
+                 <span className="login-option-header-icon">
+                   {expandCustomState ? '▼' : '▶'}
+                 </span>
+                 <span className="login-option-header-title">
+                   Custom State Parameter <span className="login-option-optional">(optional)</span>
+                 </span>
+               </button>
+               {expandCustomState && (
+                 <div className="login-option-content">
+                   <p className="login-option-hint">
+                     Text entered here is embedded in the OAuth <code>state</code> parameter and
+                     returned to you after login — demonstrating how application context can
+                     survive the redirect round-trip.
+                   </p>
+                   <p className="login-option-warning">
+                     Do not enter secrets or personal data. State values may appear in browser URLs,
+                     logs, and monitoring tools.
+                   </p>
+                   <input
+                     id="custom-state"
+                     type="text"
+                     className="login-option-input"
+                     placeholder="e.g. hello-world"
+                     value={customStateText}
+                     maxLength={CUSTOM_STATE_MAX_LENGTH}
+                     onChange={e => {
+                       setCustomStateText(e.target.value);
+                       if (showCustomStateError) {
+                         setShowCustomStateError(false);
+                       }
+                     }}
+                   />
+                   <div className="login-option-meta">
+                     <span>{customStateText.length}/{CUSTOM_STATE_MAX_LENGTH}</span>
+                     <span>Allowed: letters, numbers, spaces, dot, dash, underscore</span>
+                   </div>
+                   {showCustomStateError && !customStateValidation.valid && (
+                     <p className="login-option-error">{customStateValidation.error}</p>
+                   )}
+                 </div>
+               )}
+             </div>
 
-            <div className="login-option-group login-option-checkbox-group">
-              <label className="login-option-checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={debugMode}
-                  onChange={e => setDebugMode(e.target.checked)}
-                />
-                <span>Step-by-step flow debugger</span>
-              </label>
-              <p className="login-option-hint">
-                Pause at each stage of the Authorization Code flow and inspect what's
-                happening before continuing to the next step.
-              </p>
-            </div>
-          </div>
+             <div className="login-option-group login-option-checkbox-group">
+               <button
+                 type="button"
+                 className="login-option-header"
+                 onClick={() => setExpandDebugger(!expandDebugger)}
+                 aria-expanded={expandDebugger}
+               >
+                 <span className="login-option-header-icon">
+                   {expandDebugger ? '▼' : '▶'}
+                 </span>
+                 <span className="login-option-header-title">
+                   Step-by-step flow debugger
+                 </span>
+               </button>
+               {expandDebugger && (
+                 <div className="login-option-content">
+                   <label className="login-option-checkbox-label">
+                     <input
+                       type="checkbox"
+                       checked={debugMode}
+                       onChange={e => setDebugMode(e.target.checked)}
+                     />
+                     <span>Enable debugger</span>
+                   </label>
+                   <p className="login-option-hint">
+                     Pause at each stage of the Authorization Code flow and inspect what's
+                     happening before continuing to the next step.
+                   </p>
+                 </div>
+               )}
+             </div>
+           </div>
 
           <button onClick={handleSignIn} className="login-button primary-button">
             <span className="button-icon">🚀</span>
