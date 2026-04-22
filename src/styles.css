@@ -189,28 +189,6 @@ body {
   font-size: 1.2rem;
 }
 
-.features {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 1rem;
-  margin-top: 2rem;
-  padding: 1.5rem;
-  background: var(--bg-light);
-  border-radius: var(--radius);
-}
-
-.feature-item {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  font-size: 0.95rem;
-  color: var(--text-secondary);
-}
-
-.feature-icon {
-  font-size: 1.5rem;
-}
-
 .technical-details {
   margin-top: 2rem;
   padding: 1rem;
@@ -947,9 +925,6 @@ body {
     font-size: 3rem;
   }
 
-  .features {
-    padding: 1rem;
-  }
 
   .dashboard-card {
     padding: 1.5rem;

@@ -130,20 +130,6 @@ const LoginPage: React.FC = () => {
             Sign In with OAuth
           </button>
 
-          <div className="features">
-            <div className="feature-item">
-              <span className="feature-icon">🔒</span>
-              <span className="feature-text">Secure Authentication</span>
-            </div>
-            <div className="feature-item">
-              <span className="feature-icon">⚡</span>
-              <span className="feature-text">Quick Access</span>
-            </div>
-            <div className="feature-item">
-              <span className="feature-icon">✨</span>
-              <span className="feature-text">Modern Experience</span>
-            </div>
-          </div>
 
           <details className="technical-details">
             <summary>Technical Details</summary>
