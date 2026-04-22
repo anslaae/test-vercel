@@ -1,6 +1,7 @@
 import { getAuthConfig, generatePkceChallenge, generatePkceVerifier } from '../shared/auth.js';
 import { createOAuthTransaction, getOAuthTransactionCookieHeader } from '../shared/session.js';
 import { getRequestUrl, redirect, safeReturnTo, sendJson, type VercelRequest } from '../shared/http.js';
+import { validateCustomState } from '../../shared/customState.js';
 import type { ServerResponse } from 'http';
 
 export default async function handler(req: VercelRequest, res: ServerResponse) {
@@ -12,7 +13,14 @@ export default async function handler(req: VercelRequest, res: ServerResponse) {
   try {
     const requestUrl = getRequestUrl(req);
     const returnTo = safeReturnTo(requestUrl.searchParams.get('returnTo'));
-    const customState = requestUrl.searchParams.get('customState') || undefined;
+    const customStateResult = validateCustomState(requestUrl.searchParams.get('customState'));
+
+    if (!customStateResult.valid) {
+      sendJson(res, 400, { error: customStateResult.error }, { 'Cache-Control': 'no-store' });
+      return;
+    }
+
+    const customState = customStateResult.normalized;
     const verifier = generatePkceVerifier();
     const challenge = generatePkceChallenge(verifier);
     const transaction = await createOAuthTransaction(verifier, returnTo, customState);

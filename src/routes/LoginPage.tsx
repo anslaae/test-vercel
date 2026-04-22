@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useLocation } from 'react-router-dom';
 import useAuth from '../auth/useAuth';
 import FlowDebugDialog from '../components/FlowDebugDialog';
+import { CUSTOM_STATE_MAX_LENGTH, validateCustomState } from '../../shared/customState';
 import '../styles.css';
 
 const LoginPage: React.FC = () => {
@@ -16,14 +17,25 @@ const LoginPage: React.FC = () => {
   const [customStateText, setCustomStateText] = React.useState('');
   const [debugMode, setDebugMode] = React.useState(false);
   const [showStep1Dialog, setShowStep1Dialog] = React.useState(false);
+  const [showCustomStateError, setShowCustomStateError] = React.useState(false);
+
+  const customStateValidation = React.useMemo(
+    () => validateCustomState(customStateText),
+    [customStateText]
+  );
 
   const authIssuer = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_AUTH_ISSUER ?? '(configured server-side)';
 
   const doLogin = () => {
-    login(returnTo, { customState: customStateText.trim() || undefined });
+    login(returnTo, { customState: customStateValidation.normalized });
   };
 
   const handleSignIn = () => {
+    if (!customStateValidation.valid) {
+      setShowCustomStateError(true);
+      return;
+    }
+
     if (debugMode) {
       sessionStorage.setItem('oauth_debug', '1');
       setShowStep1Dialog(true);
@@ -64,7 +76,9 @@ const LoginPage: React.FC = () => {
     { label: 'PKCE method', value: 'S256 (SHA-256)' },
     { label: 'Authorization server', value: authIssuer },
     { label: 'Redirect URI', value: `${globalThis.location.origin}/oauth/callback` },
-    ...(customStateText.trim() ? [{ label: 'Custom state value', value: customStateText.trim() }] : [])
+    ...(customStateValidation.normalized
+      ? [{ label: 'Custom state value', value: customStateValidation.normalized }]
+      : [])
   ];
 
   return (
@@ -83,7 +97,7 @@ const LoginPage: React.FC = () => {
         <div className="login-card">
           <div className="login-header">
             <div className="logo-icon">🔐</div>
-            <h1 className="login-title">Welcome Back</h1>
+            <h1 className="login-title">Welcome</h1>
             <p className="login-subtitle">Sign in to access your personal dashboard</p>
           </div>
 
@@ -99,14 +113,31 @@ const LoginPage: React.FC = () => {
                 returned to you after login — demonstrating how application context can
                 survive the redirect round-trip.
               </p>
+              <p className="login-option-warning">
+                Do not enter secrets or personal data. State values may appear in browser URLs,
+                logs, and monitoring tools.
+              </p>
               <input
                 id="custom-state"
                 type="text"
                 className="login-option-input"
                 placeholder="e.g. hello-world"
                 value={customStateText}
-                onChange={e => setCustomStateText(e.target.value)}
+                maxLength={CUSTOM_STATE_MAX_LENGTH}
+                onChange={e => {
+                  setCustomStateText(e.target.value);
+                  if (showCustomStateError) {
+                    setShowCustomStateError(false);
+                  }
+                }}
               />
+              <div className="login-option-meta">
+                <span>{customStateText.length}/{CUSTOM_STATE_MAX_LENGTH}</span>
+                <span>Allowed: letters, numbers, spaces, dot, dash, underscore</span>
+              </div>
+              {showCustomStateError && !customStateValidation.valid && (
+                <p className="login-option-error">{customStateValidation.error}</p>
+              )}
             </div>
 
             <div className="login-option-group login-option-checkbox-group">
