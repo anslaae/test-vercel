@@ -184,7 +184,7 @@ function getTransactionFromCookie(req: VercelRequest, expectedState: string) {
   return transaction;
 }
 
-function getSessionFromCookie(req: VercelRequest) {
+function getSessionFromCookie(req: VercelRequest, requireFreshAccessToken = true) {
   const rawCookieValue = parseCookies(req)[SESSION_COOKIE_NAME];
   if (!rawCookieValue || hasSharedStore()) {
     return null;
@@ -195,11 +195,24 @@ function getSessionFromCookie(req: VercelRequest) {
     return null;
   }
 
-  if (session.expiresAt <= Date.now() + ACCESS_TOKEN_REFRESH_BUFFER_MS) {
+  if (requireFreshAccessToken && session.expiresAt <= Date.now() + ACCESS_TOKEN_REFRESH_BUFFER_MS) {
     return null;
   }
 
   return session;
+}
+
+async function getSessionForRefresh(req: VercelRequest) {
+  if (!hasSharedStore()) {
+    return getSessionFromCookie(req, false);
+  }
+
+  const sessionId = getSessionIdFromRequest(req);
+  if (!sessionId) {
+    return null;
+  }
+
+  return getJson<SessionRecord>(sessionKey(sessionId));
 }
 
 export function getSessionCookieHeader(session: SessionRecord, req: VercelRequest) {
@@ -325,3 +338,35 @@ export async function ensureActiveSession(req: VercelRequest) {
     return null;
   }
 }
+
+export async function refreshSessionWithRefreshToken(req: VercelRequest) {
+  const session = await getSessionForRefresh(req);
+  if (!session || !session.refreshToken) {
+    return null;
+  }
+
+  try {
+    const refreshed = await refreshTokens(req, session.refreshToken);
+    const updatedSession: SessionRecord = {
+      ...session,
+      ...refreshed,
+      refreshToken: refreshed.refreshToken || session.refreshToken,
+      idToken: refreshed.idToken || session.idToken
+    };
+
+    if (hasSharedStore()) {
+      await setJson(sessionKey(updatedSession.id), updatedSession, SESSION_TTL_SECONDS);
+    }
+
+    return updatedSession;
+  } catch (error) {
+    console.error('[Session] Explicit refresh token exchange failed', error);
+
+    if (hasSharedStore()) {
+      await deleteSessionById(session.id);
+    }
+
+    return null;
+  }
+}
+

@@ -9,6 +9,7 @@ const DEDICATED_AUTH_PATHS = new Set([
   '/auth-callback',
   '/auth-session',
   '/auth-session-details',
+  '/auth-refresh',
   '/auth-logout'
 ]);
 

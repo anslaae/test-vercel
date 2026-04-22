@@ -40,3 +40,8 @@ export async function getSessionDetails() {
   return response.json() as Promise<SessionDetails>;
 }
 
+export async function refreshSessionTokens() {
+  const response = await request('/auth-refresh', { method: 'POST' });
+  return response.json() as Promise<SessionDetails>;
+}
+

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getSessionDetails, getUserInfo, UnauthorizedError } from '../api/client';
+import { getSessionDetails, getUserInfo, refreshSessionTokens, UnauthorizedError } from '../api/client';
 import useAuth from '../auth/useAuth';
 import type { SessionDetails } from '../types/api';
 import FlowDebugDialog from '../components/FlowDebugDialog';
@@ -32,6 +32,17 @@ export default function Dashboard() {
     () => sessionStorage.getItem('oauth_debug') === '1'
   );
   const [showAppInfo, setShowAppInfo] = useState(false);
+  const [showRefreshExplainDialog, setShowRefreshExplainDialog] = useState(false);
+  const [showRefreshCompleteDialog, setShowRefreshCompleteDialog] = useState(false);
+  const [refreshDialogDetails, setRefreshDialogDetails] = useState<Array<{ label: string; value: string }>>([]);
+
+  const formatTimestamp = (timestampMs?: number) => {
+    if (!timestampMs || Number.isNaN(timestampMs)) {
+      return 'Not available';
+    }
+
+    return new Date(timestampMs).toISOString();
+  };
 
   const handleDismissStep3 = () => {
     sessionStorage.removeItem('oauth_debug');
@@ -96,19 +107,38 @@ export default function Dashboard() {
     }
   };
 
-  const handleRefreshSessionData = async () => {
+  const handleRefreshSessionData = () => {
+    if (!sessionDetails?.session.hasRefreshToken) {
+      setError('No refresh token is available for this session. Sign in again to get a fresh session.');
+      return;
+    }
+
+    setShowRefreshExplainDialog(true);
+  };
+
+  const runRefreshSessionData = async () => {
+    const previousAccessExpiry = sessionDetails?.tokens.access.expiresAt;
+
     try {
       setRefreshingSessionData(true);
       setError(null);
-      const sessionData = await getSessionDetails();
+      const sessionData = await refreshSessionTokens();
       setSessionDetails(sessionData);
+
+      setRefreshDialogDetails([
+        { label: 'Token endpoint grant', value: 'refresh_token' },
+        { label: 'Previous access token expiry', value: formatTimestamp(previousAccessExpiry) },
+        { label: 'New access token expiry', value: formatTimestamp(sessionData.tokens.access.expiresAt) },
+        { label: 'Refresh token still present', value: sessionData.session.hasRefreshToken ? 'Yes' : 'No' }
+      ]);
+      setShowRefreshCompleteDialog(true);
     } catch (err) {
       if (err instanceof UnauthorizedError) {
         await refreshSession();
         return;
       }
-      console.error('[Dashboard] Failed to refresh session data:', err);
-      setError(err instanceof Error ? err.message : 'Failed to refresh session data');
+      console.error('[Dashboard] Failed to refresh session tokens:', err);
+      setError(err instanceof Error ? err.message : 'Failed to refresh session tokens');
     } finally {
       setRefreshingSessionData(false);
     }
@@ -177,14 +207,6 @@ export default function Dashboard() {
     if (!sessionDetails) {
       return null;
     }
-
-    const formatTimestamp = (timestampMs?: number) => {
-      if (!timestampMs || Number.isNaN(timestampMs)) {
-        return undefined;
-      }
-
-      return new Date(timestampMs).toISOString();
-    };
 
     const idClaims = sessionDetails.tokens.id.claims || {};
     const preferredUsername = typeof idClaims.preferred_username === 'string' ? idClaims.preferred_username : undefined;
@@ -303,6 +325,34 @@ export default function Dashboard() {
           onContinue={handleDismissStep3}
         />
       )}
+      {showRefreshExplainDialog && (
+        <FlowDebugDialog
+          step={1}
+          totalSteps={2}
+          title="Preparing Refresh Token Exchange"
+          description="Clicking Continue will call a dedicated BFF endpoint. The browser sends only your session cookie; the refresh token itself stays server-side. The BFF then calls the authorization server token endpoint with grant_type=refresh_token to obtain fresh tokens."
+          details={[
+            { label: 'Browser request', value: 'POST /api/auth-refresh' },
+            { label: 'Refresh token location', value: 'Server-side session only' },
+            { label: 'OAuth grant used', value: 'refresh_token' },
+            { label: 'Client exposure', value: 'No tokens exposed to browser JavaScript' }
+          ]}
+          onContinue={() => {
+            setShowRefreshExplainDialog(false);
+            void runRefreshSessionData();
+          }}
+        />
+      )}
+      {showRefreshCompleteDialog && (
+        <FlowDebugDialog
+          step={2}
+          totalSteps={2}
+          title="Refresh Complete — Session Updated"
+          description="The BFF stored the refreshed tokens server-side and updated your session. The dashboard now shows the latest token metadata from the BFF."
+          details={refreshDialogDetails}
+          onContinue={() => setShowRefreshCompleteDialog(false)}
+        />
+      )}
       <AppInfoModal open={showAppInfo} onClose={() => setShowAppInfo(false)} />
 
       <div className="dashboard-header">
@@ -371,12 +421,16 @@ export default function Dashboard() {
               {renderSessionData()}
               <button
                 onClick={handleRefreshSessionData}
-                disabled={refreshingSessionData}
+                disabled={refreshingSessionData || !sessionDetails?.session.hasRefreshToken}
                 className="refresh-button token-refresh-button"
-                title="Refresh session data"
+                title={
+                  sessionDetails?.session.hasRefreshToken
+                    ? 'Use the refresh token in the BFF to request a new access token'
+                    : 'No refresh token available for this session'
+                }
               >
                 <span className={`refresh-icon ${refreshingSessionData ? 'spinning' : ''}`}>🔄</span>
-                Refresh
+                Refresh Tokens in BFF
               </button>
             </details>
           </div>
