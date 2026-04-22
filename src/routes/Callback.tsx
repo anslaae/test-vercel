@@ -1,21 +1,32 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
+import AuthCallbackError from '../components/AuthCallbackError';
+import AuthCallbackLoading from '../components/AuthCallbackLoading';
+import { getOAuthErrorMessage } from '../../shared/oauthErrors';
 
 /**
- * Compatibility route for OAuth providers still configured with /oauth/callback.
- * Forward the browser to the server-side callback endpoint with the original query
- * string so BFF can exchange the code and set the HttpOnly session cookie.
+ * Compatibility route for OAuth providers configured with /oauth/callback.
+ * On success, forward to the server callback endpoint for code exchange.
+ * On OAuth error response, show a user-facing error message.
  */
-const Callback: React.FC = () => {
+export default function Callback() {
+  const searchParams = useMemo(() => new URLSearchParams(globalThis.location.search), []);
+  const errorCode = searchParams.get('error');
+  const errorDescription = searchParams.get('error_description');
+
   useEffect(() => {
+    if (errorCode) {
+      return;
+    }
+
     const query = globalThis.location.search || '';
     globalThis.location.replace(`/api/auth-callback${query}`);
-  }, []);
+  }, [errorCode]);
 
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-      <p>Completing sign-in...</p>
-    </div>
-  );
-};
+  if (!errorCode) {
+    return <AuthCallbackLoading />;
+  }
 
-export default Callback;
+  const mappedMessage = getOAuthErrorMessage(errorCode);
+
+  return <AuthCallbackError message={mappedMessage} details={errorDescription} />;
+}

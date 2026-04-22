@@ -21,10 +21,6 @@
       "destination": "/api/auth-logout/index"
     },
     {
-      "source": "/oauth/callback",
-      "destination": "/api/auth-callback/index"
-    },
-    {
       "source": "/api/(.*)",
       "destination": "/api/[...proxy]"
     },

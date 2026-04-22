@@ -8,6 +8,37 @@ import {
   getSessionCookieHeader
 } from '../shared/session.js';
 import { getRequestUrl, redirect, safeReturnTo, sendJson, type VercelRequest } from '../shared/http.js';
+import { getOAuthErrorMessage } from '../../shared/oauthErrors.js';
+
+function redirectToCallbackError(
+  req: VercelRequest,
+  res: ServerResponse,
+  error: string,
+  errorDescription?: string | null,
+  errorUri?: string | null,
+  state?: string | null
+) {
+  const params = new URLSearchParams({
+    error,
+    error_description: errorDescription || getOAuthErrorMessage(error)
+  });
+
+  if (errorUri) {
+    params.set('error_uri', errorUri);
+  }
+
+  if (state) {
+    params.set('state', state);
+  }
+
+  redirect(res, `/oauth/callback?${params.toString()}`, 302, {
+    'Cache-Control': 'no-store',
+    'Set-Cookie': [
+      getClearedSessionCookieHeader(req),
+      getClearedOAuthTransactionCookieHeader(req)
+    ]
+  });
+}
 
 export default async function handler(req: VercelRequest, res: ServerResponse) {
   if (req.method !== 'GET') {
@@ -18,42 +49,25 @@ export default async function handler(req: VercelRequest, res: ServerResponse) {
   const requestUrl = getRequestUrl(req);
   const error = requestUrl.searchParams.get('error');
   const errorDescription = requestUrl.searchParams.get('error_description');
+  const errorUri = requestUrl.searchParams.get('error_uri');
+  const state = requestUrl.searchParams.get('state');
 
   if (error) {
-    redirect(res, `/login?error=${encodeURIComponent(errorDescription || error)}`, 302, {
-      'Cache-Control': 'no-store',
-      'Set-Cookie': [
-        getClearedSessionCookieHeader(req),
-        getClearedOAuthTransactionCookieHeader(req)
-      ]
-    });
+    redirectToCallbackError(req, res, error, errorDescription, errorUri, state);
     return;
   }
 
   const code = requestUrl.searchParams.get('code');
-  const state = requestUrl.searchParams.get('state');
 
   if (!code || !state) {
-    redirect(res, '/login?error=Missing%20authorization%20response', 302, {
-      'Cache-Control': 'no-store',
-      'Set-Cookie': [
-        getClearedSessionCookieHeader(req),
-        getClearedOAuthTransactionCookieHeader(req)
-      ]
-    });
+    redirectToCallbackError(req, res, 'invalid_request', 'Missing authorization response');
     return;
   }
 
   const transaction = await consumeOAuthTransaction(req, state);
 
   if (!transaction) {
-    redirect(res, '/login?error=Your%20sign-in%20session%20expired.%20Please%20try%20again.', 302, {
-      'Cache-Control': 'no-store',
-      'Set-Cookie': [
-        getClearedSessionCookieHeader(req),
-        getClearedOAuthTransactionCookieHeader(req)
-      ]
-    });
+    redirectToCallbackError(req, res, 'invalid_request', 'Your sign-in session expired. Please try again.');
     return;
   }
 
@@ -71,12 +85,6 @@ export default async function handler(req: VercelRequest, res: ServerResponse) {
     });
   } catch (callbackError) {
     console.error('[auth-callback] OAuth callback failed', callbackError);
-    redirect(res, '/login?error=Unable%20to%20complete%20sign-in', 302, {
-      'Cache-Control': 'no-store',
-      'Set-Cookie': [
-        getClearedSessionCookieHeader(req),
-        getClearedOAuthTransactionCookieHeader(req)
-      ]
-    });
+    redirectToCallbackError(req, res, 'server_error', 'Unable to complete sign-in');
   }
 }
