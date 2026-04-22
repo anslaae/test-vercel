@@ -75,8 +75,12 @@ export default async function handler(req: VercelRequest, res: ServerResponse) {
     const tokens = await exchangeCodeForTokens(req, code, transaction.verifier);
     const session = await createSession(tokens);
 
+    const returnPath = safeReturnTo(transaction.returnTo);
+    const successRedirect = transaction.customState
+      ? `${returnPath}${returnPath.includes('?') ? '&' : '?'}customState=${encodeURIComponent(transaction.customState)}`
+      : returnPath;
 
-    redirect(res, safeReturnTo(transaction.returnTo), 302, {
+    redirect(res, successRedirect, 302, {
       'Cache-Control': 'no-store',
       'Set-Cookie': [
         getSessionCookieHeader(session, req),

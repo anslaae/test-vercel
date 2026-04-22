@@ -12,9 +12,10 @@ export default async function handler(req: VercelRequest, res: ServerResponse) {
   try {
     const requestUrl = getRequestUrl(req);
     const returnTo = safeReturnTo(requestUrl.searchParams.get('returnTo'));
+    const customState = requestUrl.searchParams.get('customState') || undefined;
     const verifier = generatePkceVerifier();
     const challenge = generatePkceChallenge(verifier);
-    const transaction = await createOAuthTransaction(verifier, returnTo);
+    const transaction = await createOAuthTransaction(verifier, returnTo, customState);
     const { authorizeEndpoint, clientId, redirectUri, scope } = getAuthConfig(req);
 
     const params = new URLSearchParams({

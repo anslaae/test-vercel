@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getSessionDetails, getUserInfo, UnauthorizedError } from '../api/client';
 import useAuth from '../auth/useAuth';
 import type { SessionDetails } from '../types/api';
+import FlowDebugDialog from '../components/FlowDebugDialog';
 import '../styles.css';
 
 export default function Dashboard() {
@@ -12,6 +13,28 @@ export default function Dashboard() {
   const [refreshingUserData, setRefreshingUserData] = useState(false);
   const [refreshingSessionData, setRefreshingSessionData] = useState(false);
   const { logout, refreshSession } = useAuth();
+
+  // Read customState from URL and clean it out immediately
+  const customState = useMemo(() => {
+    const params = new URLSearchParams(globalThis.location.search);
+    const value = params.get('customState');
+    if (value) {
+      const clean = new URL(globalThis.location.href);
+      clean.searchParams.delete('customState');
+      globalThis.history.replaceState({}, '', clean.toString());
+    }
+    return value;
+  }, []);
+
+  // Step 3 debug dialog
+  const [showStep3Dialog, setShowStep3Dialog] = useState(
+    () => sessionStorage.getItem('oauth_debug') === '1'
+  );
+
+  const handleDismissStep3 = () => {
+    sessionStorage.removeItem('oauth_debug');
+    setShowStep3Dialog(false);
+  };
 
   useEffect(() => {
     let active = true;
@@ -263,6 +286,22 @@ export default function Dashboard() {
 
   return (
     <div className="dashboard-container">
+      {showStep3Dialog && (
+        <FlowDebugDialog
+          step={3}
+          totalSteps={3}
+          title="Login Complete — Tokens Exchanged"
+          description="The BFF has successfully exchanged the authorization code for tokens at the authorization server's token endpoint. Your access token, ID token, and refresh token (if issued) are stored securely server-side. Only an HttpOnly session cookie was set in your browser — no tokens ever reached the client."
+          details={[
+            { label: 'Tokens stored', value: 'Server-side only (BFF)' },
+            { label: 'Browser receives', value: 'HttpOnly session cookie' },
+            { label: 'PKCE verifier', value: 'Consumed and discarded' },
+            ...(customState ? [{ label: 'Your custom state value', value: customState }] : [])
+          ]}
+          onContinue={handleDismissStep3}
+        />
+      )}
+
       <div className="dashboard-header">
         <div>
           <h1 className="dashboard-title">
@@ -298,6 +337,20 @@ export default function Dashboard() {
         </div>
 
         <div className="card-content">
+          {customState && (
+            <div className="custom-state-banner">
+              <div className="custom-state-icon">🔄</div>
+              <div className="custom-state-body">
+                <div className="custom-state-label">State parameter returned successfully</div>
+                <div className="custom-state-value">{customState}</div>
+                <div className="custom-state-hint">
+                  This value was embedded in the OAuth <code>state</code> parameter before
+                  login and returned here after successful authentication, demonstrating how
+                  application context can survive the redirect round-trip.
+                </div>
+              </div>
+            </div>
+          )}
           {renderUserData()}
           <div className="session-section">
             <details className="token-details">

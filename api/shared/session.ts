@@ -20,6 +20,7 @@ export interface OAuthTransactionRecord {
   verifier: string;
   returnTo: string;
   createdAt: number;
+  customState?: string;
 }
 
 const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME || 'bff_session';
@@ -227,13 +228,14 @@ export function getSessionIdFromRequest(req: VercelRequest) {
   return parseCookies(req)[SESSION_COOKIE_NAME] || null;
 }
 
-export async function createOAuthTransaction(verifier: string, returnTo: string) {
+export async function createOAuthTransaction(verifier: string, returnTo: string, customState?: string) {
   const state = generateRandomToken(24);
   const transaction: OAuthTransactionRecord = {
     state,
     verifier,
     returnTo,
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    ...(customState ? { customState } : {})
   };
 
   await setJson(oauthTransactionKey(state), transaction, OAUTH_TRANSACTION_TTL_SECONDS);

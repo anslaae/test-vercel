@@ -5,6 +5,10 @@ export interface SessionInfo {
   expiresAt?: number;
 }
 
+export interface LoginOptions {
+  customState?: string;
+}
+
 function normalizeReturnTo(returnTo?: string) {
   if (!returnTo || !returnTo.startsWith('/') || returnTo.startsWith('//')) {
     return '/me';
@@ -13,9 +17,15 @@ function normalizeReturnTo(returnTo?: string) {
   return returnTo;
 }
 
-export function startLogin(returnTo?: string) {
+export function startLogin(returnTo?: string, options?: LoginOptions) {
   const target = normalizeReturnTo(returnTo);
-  globalThis.location.assign(`${AUTH_LOGIN_ENDPOINT}?returnTo=${encodeURIComponent(target)}`);
+  const params = new URLSearchParams({ returnTo: target });
+
+  if (options?.customState) {
+    params.set('customState', options.customState);
+  }
+
+  globalThis.location.assign(`${AUTH_LOGIN_ENDPOINT}?${params.toString()}`);
 }
 
 export async function getSession() {

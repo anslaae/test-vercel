@@ -1,12 +1,12 @@
 import React, { createContext, useCallback, useEffect, useState } from 'react';
-import type { SessionInfo} from './oauth';
+import type { LoginOptions, SessionInfo} from './oauth';
 import { endSession, getSession, startLogin } from './oauth';
 
 interface AuthCtx {
   session: SessionInfo | null;
   isAuthenticated: boolean;
   loading: boolean;
-  login: (returnTo?: string) => void;
+  login: (returnTo?: string, options?: LoginOptions) => void;
   logout: (returnTo?: string) => Promise<void>;
   refreshSession: () => Promise<SessionInfo | null>;
 }
@@ -56,9 +56,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const login = useCallback((returnTo?: string) => {
+  const login = useCallback((returnTo?: string, options?: LoginOptions) => {
     console.log('[AuthProvider] Redirecting to BFF login');
-    startLogin(returnTo);
+    startLogin(returnTo, options);
   }, []);
 
   return (
