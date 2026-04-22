@@ -226,7 +226,7 @@ export default function Dashboard() {
                             {label: 'Browser receives', value: 'HttpOnly session cookie'},
                             {label: 'PKCE verifier', value: 'Consumed and discarded'},
                             {label: 'Next step', value: 'Dashboard requests personal details through the BFF'},
-                            ...(customState ? [{label: 'Your custom state value', value: customState}] : [])
+                            ...(customState ? [{label: 'App context payload (inside OAuth state)', value: customState}] : [])
                         ]}
                         onContinue={handleDismissStep3}
                     />
@@ -549,12 +549,12 @@ export default function Dashboard() {
                         <div className="custom-state-banner">
                             <div className="custom-state-icon">🔄</div>
                             <div className="custom-state-body">
-                                <div className="custom-state-label">State parameter returned successfully</div>
+                                <div className="custom-state-label">App context payload returned successfully</div>
                                 <div className="custom-state-value">{customState}</div>
                                 <div className="custom-state-hint">
-                                    This value was embedded in the OAuth <code>state</code> parameter before
-                                    login and returned here after successful authentication, demonstrating how
-                                    application context can survive the redirect round-trip.
+                                    This is your app-specific context value. It was wrapped inside the OAuth
+                                    <code>state</code> token (used for CSRF/correlation) and returned after
+                                    successful authentication.
                                 </div>
                             </div>
                         </div>

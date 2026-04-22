@@ -45,7 +45,8 @@ export default function Callback() {
         description="The authorization server has redirected your browser back with a one-time authorization code. Clicking Continue will forward this code to the BFF, which will exchange it for access, ID, and refresh tokens using the stored PKCE verifier. The tokens never reach your browser."
         details={[
           { label: 'Authorization code', value: maskedCode },
-          { label: 'State parameter', value: maskedState },
+          { label: 'OAuth state token (security/correlation)', value: maskedState },
+          { label: 'App context payload', value: 'Optional value embedded by the app inside state' },
           { label: 'Next step', value: 'BFF exchanges code at token endpoint (server-side)' }
         ]}
         onContinue={() => setReadyToForward(true)}

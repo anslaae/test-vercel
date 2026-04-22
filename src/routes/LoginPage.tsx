@@ -81,7 +81,7 @@ const LoginPage: React.FC = () => {
     { label: 'Authorization server', value: authIssuer },
     { label: 'Redirect URI', value: `${globalThis.location.origin}/oauth/callback` },
     ...(customStateValidation.normalized
-      ? [{ label: 'Custom state value', value: customStateValidation.normalized }]
+      ? [{ label: 'App context payload (inside OAuth state)', value: customStateValidation.normalized }]
       : [])
   ];
 
@@ -127,15 +127,15 @@ const LoginPage: React.FC = () => {
                    {expandCustomState ? '▼' : '▶'}
                  </span>
                  <span className="login-option-header-title">
-                   Custom State Parameter <span className="login-option-optional">(optional)</span>
+                    Optional App Context (inside OAuth state) <span className="login-option-optional">(optional)</span>
                  </span>
                </button>
                {expandCustomState && (
                  <div className="login-option-content">
                    <p className="login-option-hint">
-                     Text entered here is embedded in the OAuth <code>state</code> parameter and
-                     returned to you after login — demonstrating how application context can
-                     survive the redirect round-trip.
+                      Text entered here is your app context payload. The BFF wraps it inside the
+                      OAuth <code>state</code> value (used for CSRF/correlation) and returns it
+                      after login so app context can survive the redirect round-trip.
                    </p>
                    <p className="login-option-warning">
                      Do not enter secrets or personal data. State values may appear in browser URLs,
