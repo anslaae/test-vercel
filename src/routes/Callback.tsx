@@ -15,12 +15,13 @@ export default function Callback() {
 
   useEffect(() => {
     if (errorCode) {
+      console.error('[Callback] OAuth error:', errorCode, errorDescription ?? '(no description)');
       return;
     }
 
     const query = globalThis.location.search || '';
     globalThis.location.replace(`/api/auth-callback${query}`);
-  }, [errorCode]);
+  }, [errorCode, errorDescription]);
 
   if (!errorCode) {
     return <AuthCallbackLoading />;
@@ -28,5 +29,5 @@ export default function Callback() {
 
   const mappedMessage = getOAuthErrorMessage(errorCode);
 
-  return <AuthCallbackError message={mappedMessage} details={errorDescription} />;
+  return <AuthCallbackError message={mappedMessage} />;
 }
