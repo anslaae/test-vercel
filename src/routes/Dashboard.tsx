@@ -1,13 +1,48 @@
 import {useEffect, useMemo, useState} from 'react';
-import {getSessionDetails, getUserInfo, refreshSessionTokens, UnauthorizedError} from '../api/client';
+import {DEFAULT_ME_EMBEDS, getSessionDetails, getUserInfo, refreshSessionTokens, UnauthorizedError, type MeEmbedKey} from '../api/client';
 import useAuth from '../auth/useAuth';
-import type {SessionDetails} from '../types/api';
+import type {MeResponse, SessionDetails} from '../types/api';
 import FlowDebugDialog from '../components/FlowDebugDialog';
 import AppInfoModal from '../components/AppInfoModal';
 import '../styles.css';
 
+const EMBED_OPTIONS: Array<{ key: MeEmbedKey; label: string }> = [
+    {key: 'account', label: 'Account'},
+    {key: 'organization', label: 'Organization'},
+    {key: 'job', label: 'Job'},
+    {key: 'manager', label: 'Manager'},
+    {key: 'photo', label: 'Photo'}
+];
+
+const EMBED_STORAGE_KEY = 'dashboard_me_embeds';
+const VALID_EMBED_KEYS = new Set<MeEmbedKey>(EMBED_OPTIONS.map((option) => option.key));
+
+function loadEmbedSelection(): MeEmbedKey[] {
+    const raw = sessionStorage.getItem(EMBED_STORAGE_KEY);
+    if (!raw) {
+        return DEFAULT_ME_EMBEDS;
+    }
+
+    const parsed = raw
+        .split(',')
+        .map((value) => value.trim())
+        .filter((value): value is MeEmbedKey => VALID_EMBED_KEYS.has(value as MeEmbedKey));
+
+    if (parsed.length === 0) {
+        return DEFAULT_ME_EMBEDS;
+    }
+
+    // Keep stable rendering order based on the configured embed options.
+    return EMBED_OPTIONS
+        .map((option) => option.key)
+        .filter((key) => parsed.includes(key));
+}
+
 export default function Dashboard() {
-    const [userInfo, setUserInfo] = useState<Record<string, unknown> | null>(null);
+    const [selectedEmbeds, setSelectedEmbeds] = useState<MeEmbedKey[]>(() => loadEmbedSelection());
+    const embedQueryValue = selectedEmbeds.join(',');
+    const meEndpointWithEmbeds = embedQueryValue ? `/api/me?embed=${embedQueryValue}` : '/api/me';
+    const [userInfo, setUserInfo] = useState<MeResponse | null>(null);
     const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
     const [loading, setLoading] = useState(
         () => sessionStorage.getItem('oauth_debug') !== '1'
@@ -72,7 +107,7 @@ export default function Dashboard() {
         let active = true;
 
         async function fetchDashboardData() {
-            return Promise.all([getUserInfo(), getSessionDetails()]);
+            return Promise.all([getUserInfo(selectedEmbeds), getSessionDetails()]);
         }
 
         async function fetchUserInfo() {
@@ -140,7 +175,21 @@ export default function Dashboard() {
         return () => {
             active = false;
         };
-    }, [allowInitialDashboardLoad, refreshSession]);
+    }, [allowInitialDashboardLoad, refreshSession, embedQueryValue, selectedEmbeds]);
+
+    useEffect(() => {
+        sessionStorage.setItem(EMBED_STORAGE_KEY, selectedEmbeds.join(','));
+    }, [selectedEmbeds]);
+
+    const toggleEmbed = (embedKey: MeEmbedKey) => {
+        setSelectedEmbeds((current) => {
+            if (current.includes(embedKey)) {
+                return current.filter((value) => value !== embedKey);
+            }
+
+            return [...current, embedKey];
+        });
+    };
 
     const handleRefreshUserData = () => {
         setShowUserDataExplainDialog(true);
@@ -150,12 +199,12 @@ export default function Dashboard() {
         try {
             setRefreshingUserData(true);
             setError(null);
-            const userData = await getUserInfo();
+            const userData = await getUserInfo(selectedEmbeds);
             setUserInfo(userData);
 
             const currentAccessExpiry = sessionDetails?.tokens.access.expiresAt;
             setUserDataDialogDetails([
-                {label: 'Request endpoint', value: 'GET /api/personal-details/me'},
+                {label: 'Request endpoint', value: `GET ${meEndpointWithEmbeds}`},
                 {label: 'Authorization header', value: 'Bearer <access_token>'},
                 {label: 'BFF token management', value: 'Automatic refresh if needed'},
                 {label: 'Current access token expiry', value: formatTimestamp(currentAccessExpiry)}
@@ -238,10 +287,10 @@ export default function Dashboard() {
                         title="Calling the Personal Details API"
                         description="The dashboard is now ready to load your information. Clicking Continue will trigger a browser request to the BFF. The browser sends only your HttpOnly session cookie, and the BFF adds the access token before calling the protected personal-details API. If the token has expired, the BFF can refresh it server-side before forwarding the request."
                         details={[
-                            {label: 'Browser request', value: 'GET /api/personal-details/me'},
+                            {label: 'Browser request', value: `GET ${meEndpointWithEmbeds}`},
                             {label: 'Browser sends', value: 'Session cookie only' },
                             {label: 'BFF adds', value: 'Bearer access token' },
-                            {label: 'Protected API', value: 'personal-details /me endpoint' },
+                            {label: 'Protected API', value: '/me endpoint' },
                             {label: 'Token refresh', value: 'Handled server-side if needed' }
                         ]}
                         onContinue={handleDismissStep4}
@@ -284,31 +333,90 @@ export default function Dashboard() {
     const renderUserData = () => {
         if (!userInfo) return null;
 
-        const fullName =
-            typeof userInfo?.name === 'object' && userInfo?.name !== null && 'fullName' in userInfo.name
-                ? (userInfo.name as { fullName?: unknown }).fullName
-                : undefined;
+        const formatDisplayValue = (value: unknown) => {
+            if (value === null || value === undefined || value === '') {
+                return 'Not available';
+            }
 
-        const otherFields: Record<string, unknown> = {...userInfo};
-        delete otherFields.name;
+            return String(value);
+        };
+
+        const personalInfoRows: Array<[string, unknown]> = [
+            ['Profile ID', userInfo.profileId],
+            ['First name', userInfo.firstName],
+            ['Middle name', userInfo.middleName],
+            ['Last name', userInfo.lastName],
+            ['Email', userInfo.email],
+            ['Language', userInfo.language],
+            ['Locale', userInfo.locale],
+            ['Date format', userInfo.dateFormat]
+        ];
+
+        const embeddedRows: Array<[string, unknown]> = [
+            ['Account status', userInfo._embedded?.account?.status],
+            ['Organization', userInfo._embedded?.organization?.name],
+            ['Job title', userInfo._embedded?.job?.title],
+            ['Manager', userInfo._embedded?.manager?.displayName],
+            ['Photo MIME type', userInfo._embedded?.photo?.mimeType]
+        ];
+
+        const links = userInfo._links || {};
+        const linksRows: Array<[string, unknown]> = [
+            ['Self', links.self?.href],
+            ['Account', links.account?.href],
+            ['Organization', links.organization?.href],
+            ['Job', links.job?.href],
+            ['Manager', links.manager?.href],
+            ['Photo', links.photo?.href]
+        ];
 
         return (
             <>
-                {fullName && (
-                    <div className="user-info-grid">
-                        <div className="info-item">
-                            <div className="info-label">Name</div>
-                            <div className="info-value">{String(fullName)}</div>
+                <div className="user-info-grid">
+                    {personalInfoRows.map(([label, value]) => (
+                        <div key={label} className="info-item">
+                            <div className="info-label">{label}</div>
+                            <div className="info-value">{formatDisplayValue(value)}</div>
                         </div>
-                    </div>
-                )}
+                    ))}
+                </div>
 
-                <details className="raw-data-section" open={!fullName}>
+                <details className="raw-data-section">
                     <summary className="raw-data-summary">
-                        <h3 className="section-heading">Additional Information</h3>
-                        <span className="summary-badge">{Object.keys(otherFields).length} fields</span>
+                        <h3 className="section-heading">Embedded Resources (if requested)</h3>
+                        <span className="summary-badge">{embeddedRows.length} fields</span>
                     </summary>
-                    <pre className="json-display">{JSON.stringify(otherFields, null, 2)}</pre>
+                    <div className="kv-list">
+                        {embeddedRows.map(([key, value]) => (
+                            <div key={key} className="kv-row">
+                                <span className="kv-key">{key}</span>
+                                <span className="kv-value">{formatDisplayValue(value)}</span>
+                            </div>
+                        ))}
+                    </div>
+                </details>
+
+                <details className="raw-data-section" open>
+                    <summary className="raw-data-summary">
+                        <h3 className="section-heading">HAL Links</h3>
+                        <span className="summary-badge">{linksRows.length} links</span>
+                    </summary>
+                    <div className="kv-list">
+                        {linksRows.map(([key, value]) => (
+                            <div key={key} className="kv-row">
+                                <span className="kv-key">{key}</span>
+                                <span className="kv-value">{formatDisplayValue(value)}</span>
+                            </div>
+                        ))}
+                    </div>
+                </details>
+
+                <details className="raw-data-section">
+                    <summary className="raw-data-summary">
+                        <h3 className="section-heading">Raw API Response</h3>
+                        <span className="summary-badge">JSON</span>
+                    </summary>
+                    <pre className="json-display">{JSON.stringify(userInfo, null, 2)}</pre>
                 </details>
             </>
         );
@@ -444,10 +552,10 @@ export default function Dashboard() {
                     title="Calling the Personal Details API"
                     description="The dashboard is now ready to load your information. Clicking Continue will trigger a browser request to the BFF. The browser sends only your HttpOnly session cookie, and the BFF adds the access token before calling the protected personal-details API. If the token has expired, the BFF can refresh it server-side before forwarding the request."
                     details={[
-                        {label: 'Browser request', value: 'GET /api/personal-details/me'},
+                        {label: 'Browser request', value: `GET ${meEndpointWithEmbeds}`},
                         {label: 'Browser sends', value: 'Session cookie only' },
                         {label: 'BFF adds', value: 'Bearer access token' },
-                        {label: 'Protected API', value: 'personal-details /me endpoint' },
+                        {label: 'Protected API', value: '/me endpoint' },
                         {label: 'Token refresh', value: 'Handled server-side if needed' }
                     ]}
                     onContinue={handleDismissStep4}
@@ -489,6 +597,7 @@ export default function Dashboard() {
                     description="Clicking Continue will request your personal details from the backend API. Your browser sends only the session cookie; the BFF automatically attaches the access token to the request. If the access token has expired, the BFF will silently refresh it using the refresh token before forwarding your request."
                     details={[
                         {label: 'Request flow', value: 'Browser → BFF → Backend API'},
+                        {label: 'Browser request', value: `GET ${meEndpointWithEmbeds}`},
                         {label: 'Session cookie', value: 'Sent with request (HttpOnly)'},
                         {label: 'Access token', value: 'Attached by BFF (never exposed to browser)'},
                         {label: 'Auto-refresh', value: 'BFF refreshes if token expired'}
@@ -545,6 +654,23 @@ export default function Dashboard() {
                 </div>
 
                 <div className="card-content">
+                    <div className="embed-controls">
+                        <div className="embed-controls-heading">Embedded resources to request</div>
+                        <div className="embed-controls-options">
+                            {EMBED_OPTIONS.map((option) => (
+                                <label key={option.key} className="embed-option">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedEmbeds.includes(option.key)}
+                                        onChange={() => toggleEmbed(option.key)}
+                                    />
+                                    <span>{option.label}</span>
+                                </label>
+                            ))}
+                        </div>
+                        <div className="embed-controls-meta">Current request: <code>{meEndpointWithEmbeds}</code></div>
+                    </div>
+
                     {customState && (
                         <div className="custom-state-banner">
                             <div className="custom-state-icon">🔄</div>

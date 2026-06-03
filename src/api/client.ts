@@ -1,6 +1,10 @@
-import type { SessionDetails } from '../types/api';
+import type { MeResponse, SessionDetails } from '../types/api';
 
 const API_BASE = '/api';
+
+export type MeEmbedKey = 'account' | 'organization' | 'job' | 'manager' | 'photo';
+
+export const DEFAULT_ME_EMBEDS: MeEmbedKey[] = ['account', 'organization', 'job', 'manager', 'photo'];
 
 export class UnauthorizedError extends Error {
   constructor() {
@@ -30,9 +34,14 @@ async function request(path: string, init?: RequestInit) {
   return response;
 }
 
-export async function getUserInfo() {
-  const response = await request('/personal-details/me');
-  return response.json() as Promise<Record<string, unknown>>;
+export async function getUserInfo(embeds: MeEmbedKey[] = DEFAULT_ME_EMBEDS) {
+  const query = embeds.length > 0 ? `?embed=${encodeURIComponent(embeds.join(','))}` : '';
+  const response = await request(`/me${query}`, {
+    headers: {
+      Accept: 'application/hal+json, application/json'
+    }
+  });
+  return response.json() as Promise<MeResponse>;
 }
 
 export async function getSessionDetails() {
