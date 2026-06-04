@@ -1,5 +1,13 @@
 import {useEffect, useMemo, useState} from 'react';
-import {DEFAULT_ME_EMBEDS, getSessionDetails, getUserInfo, refreshSessionTokens, UnauthorizedError, type MeEmbedKey} from '../api/client';
+import {
+    DEFAULT_ME_EMBEDS,
+    getSessionDetails,
+    getUserInfo,
+    getUserPhotoContent,
+    refreshSessionTokens,
+    UnauthorizedError,
+    type MeEmbedKey
+} from '../api/client';
 import useAuth from '../auth/useAuth';
 import type {MeResponse, SessionDetails} from '../types/api';
 import FlowDebugDialog from '../components/FlowDebugDialog';
@@ -50,6 +58,7 @@ export default function Dashboard() {
     const [error, setError] = useState<string | null>(null);
     const [refreshingUserData, setRefreshingUserData] = useState(false);
     const [refreshingSessionData, setRefreshingSessionData] = useState(false);
+    const [photoUrl, setPhotoUrl] = useState<string | null>(null);
     const {logout, refreshSession} = useAuth();
 
     // Read customState from URL and clean it out immediately
@@ -123,6 +132,37 @@ export default function Dashboard() {
 
                 setUserInfo(userData);
                 setSessionDetails(sessionData);
+
+                try {
+                    const photoBlob = await getUserPhotoContent();
+                    if (!active) {
+                        return;
+                    }
+
+                    setPhotoUrl((current) => {
+                        if (current) {
+                            URL.revokeObjectURL(current);
+                        }
+
+                        return photoBlob ? URL.createObjectURL(photoBlob) : null;
+                    });
+                } catch (photoError) {
+                    if (!active) {
+                        return;
+                    }
+
+                    if (photoError instanceof UnauthorizedError) {
+                        throw photoError;
+                    }
+
+                    console.warn('[Dashboard] Failed to load profile photo:', photoError);
+                    setPhotoUrl((current) => {
+                        if (current) {
+                            URL.revokeObjectURL(current);
+                        }
+                        return null;
+                    });
+                }
             } catch (err) {
                 if (err instanceof UnauthorizedError) {
                     const nextSession = await refreshSession();
@@ -145,6 +185,34 @@ export default function Dashboard() {
 
                         setUserInfo(userData);
                         setSessionDetails(sessionData);
+
+                        try {
+                            const photoBlob = await getUserPhotoContent();
+                            if (!active) {
+                                return;
+                            }
+
+                            setPhotoUrl((current) => {
+                                if (current) {
+                                    URL.revokeObjectURL(current);
+                                }
+
+                                return photoBlob ? URL.createObjectURL(photoBlob) : null;
+                            });
+                        } catch (photoError) {
+                            if (!active) {
+                                return;
+                            }
+
+                            console.warn('[Dashboard] Failed to load profile photo after session refresh:', photoError);
+                            setPhotoUrl((current) => {
+                                if (current) {
+                                    URL.revokeObjectURL(current);
+                                }
+                                return null;
+                            });
+                        }
+
                         return;
                     } catch (retryError) {
                         if (!active) {
@@ -178,6 +246,14 @@ export default function Dashboard() {
     }, [allowInitialDashboardLoad, refreshSession, embedQueryValue, selectedEmbeds]);
 
     useEffect(() => {
+        return () => {
+            if (photoUrl) {
+                URL.revokeObjectURL(photoUrl);
+            }
+        };
+    }, [photoUrl]);
+
+    useEffect(() => {
         sessionStorage.setItem(EMBED_STORAGE_KEY, selectedEmbeds.join(','));
     }, [selectedEmbeds]);
 
@@ -201,6 +277,30 @@ export default function Dashboard() {
             setError(null);
             const userData = await getUserInfo(selectedEmbeds);
             setUserInfo(userData);
+
+            try {
+                const photoBlob = await getUserPhotoContent();
+                setPhotoUrl((current) => {
+                    if (current) {
+                        URL.revokeObjectURL(current);
+                    }
+
+                    return photoBlob ? URL.createObjectURL(photoBlob) : null;
+                });
+            } catch (photoError) {
+                if (photoError instanceof UnauthorizedError) {
+                    await refreshSession();
+                    return;
+                }
+
+                console.warn('[Dashboard] Failed to refresh profile photo:', photoError);
+                setPhotoUrl((current) => {
+                    if (current) {
+                        URL.revokeObjectURL(current);
+                    }
+                    return null;
+                });
+            }
 
             const currentAccessExpiry = sessionDetails?.tokens.access.expiresAt;
             setUserDataDialogDetails([
@@ -346,15 +446,27 @@ export default function Dashboard() {
             return String(value);
         };
 
-        const personalInfoRows: Array<[string, unknown]> = [
-            ['Profile ID', userInfo.profileId],
-            ['First name', userInfo.firstName],
-            ['Middle name', userInfo.middleName],
-            ['Last name', userInfo.lastName],
-            ['Email', userInfo.email],
-            ['Language', userInfo.language],
-            ['Locale', userInfo.locale],
-            ['Date format', userInfo.dateFormat]
+        const fullName = [userInfo.firstName, userInfo.middleName, userInfo.lastName]
+            .map((value) => (typeof value === 'string' ? value.trim() : ''))
+            .filter((value) => value.length > 0)
+            .join(' ');
+
+        const embeddedResourceCount = [
+            userInfo._embedded?.account,
+            userInfo._embedded?.organization,
+            userInfo._embedded?.job,
+            userInfo._embedded?.manager,
+            userInfo._embedded?.photo
+        ].filter(Boolean).length;
+
+        const personalInfoRows: Array<{ label: string; value: unknown; className?: string }> = [
+            {label: 'Name', value: fullName, className: 'info-item-wide'},
+            {label: 'Profile ID', value: userInfo.profileId},
+            {label: 'Email', value: userInfo.email},
+            {label: 'Language', value: userInfo.language},
+            {label: 'Locale', value: userInfo.locale},
+            {label: 'Date format', value: userInfo.dateFormat},
+            {label: 'Embedded resources', value: `${embeddedResourceCount}/5`}
         ];
 
         const embeddedRows: Array<[string, unknown]> = [
@@ -378,8 +490,8 @@ export default function Dashboard() {
         return (
             <>
                 <div className="user-info-grid">
-                    {personalInfoRows.map(([label, value]) => (
-                        <div key={label} className="info-item">
+                    {personalInfoRows.map(({label, value, className}) => (
+                        <div key={label} className={`info-item${className ? ` ${className}` : ''}`}>
                             <div className="info-label">{label}</div>
                             <div className="info-value">{formatDisplayValue(value)}</div>
                         </div>
@@ -641,7 +753,11 @@ export default function Dashboard() {
             <div className="dashboard-card">
                 <div className="card-header">
                     <h2 className="card-title">
-                        <span className="card-icon">👤</span>
+                        {photoUrl ? (
+                            <img src={photoUrl} alt="Profile" className="card-avatar-image"/>
+                        ) : (
+                            <span className="card-icon">👤</span>
+                        )}
                         Your Personal Information
                     </h2>
                     <div className="card-header-actions">

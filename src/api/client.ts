@@ -44,6 +44,30 @@ export async function getUserInfo(embeds: MeEmbedKey[] = DEFAULT_ME_EMBEDS) {
   return response.json() as Promise<MeResponse>;
 }
 
+export async function getUserPhotoContent() {
+  const response = await fetch(`${API_BASE}/me/photo/content`, {
+    credentials: 'include',
+    headers: {
+      Accept: 'image/*, application/octet-stream'
+    }
+  });
+
+  if (response.status === 401) {
+    throw new UnauthorizedError();
+  }
+
+  // The API can signal a missing photo with 404 (content endpoint) or 204.
+  if (response.status === 404 || response.status === 204) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.status}`);
+  }
+
+  return response.blob();
+}
+
 export async function getSessionDetails() {
   const response = await request('/auth-session-details');
   return response.json() as Promise<SessionDetails>;
