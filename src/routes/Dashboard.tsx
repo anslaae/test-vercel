@@ -322,9 +322,14 @@ export default function Dashboard() {
                     <div className="error-icon">⚠️</div>
                     <h2 className="dashboard-title">Oops! Something went wrong</h2>
                     <p className="error-message">{error}</p>
-                    <button onClick={() => window.location.reload()} className="login-button secondary-button">
-                        Try Again
-                    </button>
+                    <div className="error-actions">
+                        <button onClick={() => window.location.reload()} className="login-button secondary-button">
+                            Try Again
+                        </button>
+                        <button onClick={() => logout()} className="login-button">
+                            Logout and start over
+                        </button>
+                    </div>
                 </div>
             </div>
         );
