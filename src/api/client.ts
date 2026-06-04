@@ -13,6 +13,16 @@ export class UnauthorizedError extends Error {
   }
 }
 
+export class ApiError extends Error {
+  constructor(
+    public readonly endpoint: string,
+    public readonly status: number
+  ) {
+    super(`Request failed with status ${status}`);
+    this.name = 'ApiError';
+  }
+}
+
 async function request(path: string, init?: RequestInit) {
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
@@ -28,7 +38,7 @@ async function request(path: string, init?: RequestInit) {
   }
 
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    throw new ApiError(path, response.status);
   }
 
   return response;

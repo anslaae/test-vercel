@@ -326,6 +326,87 @@ body {
   gap: 0.75rem;
 }
 
+.api-error-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 1rem 1.1rem;
+  background: #fff8f7;
+  border: 1px solid #f5c2bb;
+  border-left: 4px solid var(--error-color);
+  border-radius: var(--radius);
+  margin-bottom: 1.5rem;
+}
+
+.api-error-icon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.api-error-body {
+  flex: 1;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.api-error-title {
+  font-weight: 600;
+  font-size: 0.925rem;
+  color: #b91c1c;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.api-error-status {
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.1rem 0.5rem;
+  border-radius: 20px;
+  letter-spacing: 0.3px;
+}
+
+.api-error-endpoint code {
+  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.api-error-message {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.api-error-retry {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid #f5c2bb;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 0.35rem 0.9rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background-color 0.2s ease;
+}
+
+.api-error-retry:hover:not(:disabled) {
+  background: #fecaca;
+}
+
+.api-error-retry:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .card-header {
   display: flex;
   justify-content: space-between;

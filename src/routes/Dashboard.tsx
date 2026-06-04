@@ -6,6 +6,7 @@ import {
     getUserPhotoContent,
     refreshSessionTokens,
     UnauthorizedError,
+    ApiError,
     type MeEmbedKey
 } from '../api/client';
 import useAuth from '../auth/useAuth';
@@ -51,6 +52,7 @@ export default function Dashboard() {
     const embedQueryValue = selectedEmbeds.join(',');
     const meEndpointWithEmbeds = embedQueryValue ? `/api/me?embed=${embedQueryValue}` : '/api/me';
     const [userInfo, setUserInfo] = useState<MeResponse | null>(null);
+    const [userInfoError, setUserInfoError] = useState<{message: string; endpoint: string; status?: number} | null>(null);
     const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
     const [loading, setLoading] = useState(
         () => sessionStorage.getItem('oauth_debug') !== '1'
@@ -115,130 +117,117 @@ export default function Dashboard() {
 
         let active = true;
 
-        async function fetchDashboardData() {
-            return Promise.all([getUserInfo(selectedEmbeds), getSessionDetails()]);
-        }
-
-        async function fetchUserInfo() {
+        async function fetchAllData() {
             try {
                 setLoading(true);
                 setError(null);
+                setUserInfoError(null);
 
-                let [userData, sessionData] = await fetchDashboardData();
+                const [userResult, sessionResult] = await Promise.allSettled([
+                    getUserInfo(selectedEmbeds),
+                    getSessionDetails()
+                ]);
 
-                if (!active) {
+                if (!active) return;
+
+                // Handle session result — auth failures are blocking
+                if (sessionResult.status === 'rejected') {
+                    const err = sessionResult.reason;
+                    if (err instanceof UnauthorizedError) {
+                        const nextSession = await refreshSession();
+                        if (!active) return;
+                        if (!nextSession) {
+                            setError('Your session has expired. Please sign in again.');
+                            return;
+                        }
+                        // Retry both after session refresh
+                        const [retryUser, retrySession] = await Promise.allSettled([
+                            getUserInfo(selectedEmbeds),
+                            getSessionDetails()
+                        ]);
+                        if (!active) return;
+                        if (retrySession.status === 'fulfilled') setSessionDetails(retrySession.value);
+                        if (retryUser.status === 'fulfilled') {
+                            setUserInfo(retryUser.value);
+                        } else {
+                            const retryErr = retryUser.reason;
+                            setUserInfoError({
+                                message: retryErr instanceof Error ? retryErr.message : 'Failed to load personal details',
+                                endpoint: retryErr instanceof ApiError ? retryErr.endpoint : meEndpointWithEmbeds,
+                                status: retryErr instanceof ApiError ? retryErr.status : undefined
+                            });
+                        }
+                        return;
+                    }
+                    setError(err instanceof Error ? err.message : 'Failed to load session');
                     return;
                 }
 
-                setUserInfo(userData);
-                setSessionDetails(sessionData);
+                setSessionDetails(sessionResult.value);
 
-                try {
-                    const photoBlob = await getUserPhotoContent();
-                    if (!active) {
+                // Handle user info result — non-blocking: show the page with an inline error
+                if (userResult.status === 'fulfilled') {
+                    setUserInfo(userResult.value);
+                    setUserInfoError(null);
+                } else {
+                    const err = userResult.reason;
+                    if (err instanceof UnauthorizedError) {
+                        const nextSession = await refreshSession();
+                        if (!active) return;
+                        if (!nextSession) {
+                            setError('Your session has expired. Please sign in again.');
+                            return;
+                        }
+                        try {
+                            const retryData = await getUserInfo(selectedEmbeds);
+                            if (!active) return;
+                            setUserInfo(retryData);
+                            setUserInfoError(null);
+                        } catch (retryErr) {
+                            if (!active) return;
+                            setUserInfoError({
+                                message: retryErr instanceof Error ? retryErr.message : 'Failed to load personal details',
+                                endpoint: retryErr instanceof ApiError ? retryErr.endpoint : meEndpointWithEmbeds,
+                                status: retryErr instanceof ApiError ? retryErr.status : undefined
+                            });
+                        }
                         return;
                     }
+                    console.error('[Dashboard] Personal details API failed:', err);
+                    setUserInfoError({
+                        message: err instanceof Error ? err.message : 'Failed to load personal details',
+                        endpoint: err instanceof ApiError ? err.endpoint : meEndpointWithEmbeds,
+                        status: err instanceof ApiError ? err.status : undefined
+                    });
+                }
 
+                // Photo is always non-blocking
+                try {
+                    const photoBlob = await getUserPhotoContent();
+                    if (!active) return;
                     setPhotoUrl((current) => {
-                        if (current) {
-                            URL.revokeObjectURL(current);
-                        }
-
+                        if (current) URL.revokeObjectURL(current);
                         return photoBlob ? URL.createObjectURL(photoBlob) : null;
                     });
                 } catch (photoError) {
-                    if (!active) {
-                        return;
-                    }
-
-                    if (photoError instanceof UnauthorizedError) {
-                        throw photoError;
-                    }
-
+                    if (!active) return;
+                    if (photoError instanceof UnauthorizedError) return;
                     console.warn('[Dashboard] Failed to load profile photo:', photoError);
                     setPhotoUrl((current) => {
-                        if (current) {
-                            URL.revokeObjectURL(current);
-                        }
+                        if (current) URL.revokeObjectURL(current);
                         return null;
                     });
                 }
             } catch (err) {
-                if (err instanceof UnauthorizedError) {
-                    const nextSession = await refreshSession();
-
-                    if (!active) {
-                        return;
-                    }
-
-                    if (!nextSession) {
-                        setError('Your session has expired. Please sign in again.');
-                        return;
-                    }
-
-                    try {
-                        const [userData, sessionData] = await fetchDashboardData();
-
-                        if (!active) {
-                            return;
-                        }
-
-                        setUserInfo(userData);
-                        setSessionDetails(sessionData);
-
-                        try {
-                            const photoBlob = await getUserPhotoContent();
-                            if (!active) {
-                                return;
-                            }
-
-                            setPhotoUrl((current) => {
-                                if (current) {
-                                    URL.revokeObjectURL(current);
-                                }
-
-                                return photoBlob ? URL.createObjectURL(photoBlob) : null;
-                            });
-                        } catch (photoError) {
-                            if (!active) {
-                                return;
-                            }
-
-                            console.warn('[Dashboard] Failed to load profile photo after session refresh:', photoError);
-                            setPhotoUrl((current) => {
-                                if (current) {
-                                    URL.revokeObjectURL(current);
-                                }
-                                return null;
-                            });
-                        }
-
-                        return;
-                    } catch (retryError) {
-                        if (!active) {
-                            return;
-                        }
-
-                        console.error('[Dashboard] Failed to fetch user info after refreshing session:', retryError);
-                        setError(retryError instanceof Error ? retryError.message : 'Failed to load user info');
-                        return;
-                    }
-                }
-
-                if (!active) {
-                    return;
-                }
-
-                console.error('[Dashboard] Failed to fetch user info:', err);
-                setError(err instanceof Error ? err.message : 'Failed to load user info');
+                if (!active) return;
+                console.error('[Dashboard] Unexpected error:', err);
+                setError(err instanceof Error ? err.message : 'Something went wrong');
             } finally {
-                if (active) {
-                    setLoading(false);
-                }
+                if (active) setLoading(false);
             }
         }
 
-        fetchUserInfo();
+        fetchAllData();
 
         return () => {
             active = false;
@@ -275,6 +264,7 @@ export default function Dashboard() {
         try {
             setRefreshingUserData(true);
             setError(null);
+            setUserInfoError(null);
             const userData = await getUserInfo(selectedEmbeds);
             setUserInfo(userData);
 
@@ -316,7 +306,11 @@ export default function Dashboard() {
                 return;
             }
             console.error('[Dashboard] Failed to refresh user data:', err);
-            setError(err instanceof Error ? err.message : 'Failed to refresh user data');
+            setUserInfoError({
+                message: err instanceof Error ? err.message : 'Failed to refresh personal details',
+                endpoint: err instanceof ApiError ? err.endpoint : meEndpointWithEmbeds,
+                status: err instanceof ApiError ? err.status : undefined
+            });
         } finally {
             setRefreshingUserData(false);
         }
@@ -775,6 +769,30 @@ export default function Dashboard() {
                 </div>
 
                 <div className="card-content">
+                    {userInfoError && (
+                        <div className="api-error-banner">
+                            <div className="api-error-icon">⚠️</div>
+                            <div className="api-error-body">
+                                <div className="api-error-title">
+                                    Personal details API failed
+                                    {userInfoError.status && (
+                                        <span className="api-error-status">HTTP {userInfoError.status}</span>
+                                    )}
+                                </div>
+                                <div className="api-error-endpoint">
+                                    <code>GET {userInfoError.endpoint}</code>
+                                </div>
+                                <div className="api-error-message">{userInfoError.message}</div>
+                            </div>
+                            <button
+                                className="api-error-retry"
+                                onClick={handleRefreshUserData}
+                                disabled={refreshingUserData}
+                            >
+                                Retry
+                            </button>
+                        </div>
+                    )}
                     <div className="embed-controls">
                         <div className="embed-controls-heading">Embedded resources to request</div>
                         <div className="embed-controls-options">
