@@ -2,8 +2,10 @@ import type { ServerResponse } from 'http';
 import { ensureActiveSession, deleteSessionById, getClearedSessionCookieHeader, getSessionIdFromRequest } from './shared/session.js';
 import { getRequestUrl, readRawBody, sendJson, type VercelRequest } from './shared/http.js';
 
-const AUTH_API_BASE = (process.env.AUTH_API_BASE || 'https://api.devtest.catalystone.dev').replace(/\/+$/, '');
-const USER_API_BASE = (process.env.USER_API_BASE || 'https://api.devtest.catalystone.io').replace(/\/+$/, '');
+// API_BASE is the single env var. AUTH_API_BASE / USER_API_BASE are kept for backward compatibility.
+const _apiBase = process.env.API_BASE?.replace(/\/+$/, '');
+const AUTH_API_BASE = (_apiBase || process.env.AUTH_API_BASE || 'https://api.devtest.catalystone.dev').replace(/\/+$/, '');
+const USER_API_BASE = (_apiBase || process.env.USER_API_BASE || 'https://api.devtest.catalystone.io').replace(/\/+$/, '');
 const DEDICATED_AUTH_PATHS = new Set([
   '/auth-login',
   '/auth-callback',
@@ -104,4 +106,3 @@ export const config = {
     bodyParser: false
   }
 };
-

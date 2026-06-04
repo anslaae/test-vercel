@@ -7,8 +7,20 @@ import {
   getClearedSessionCookieHeader,
   getSessionCookieHeader
 } from '../shared/session.js';
-import { getRequestUrl, redirect, safeReturnTo, sendJson, type VercelRequest } from '../shared/http.js';
+import { getRequestOrigin, getRequestUrl, redirect, safeReturnTo, sendJson, type VercelRequest } from '../shared/http.js';
 import { getOAuthErrorMessage } from '../../shared/oauthErrors.js';
+
+function getFrontendBase(req: VercelRequest): string {
+  const configured = process.env.FRONTEND_URL?.trim().replace(/\/+$/, '');
+  if (configured) return configured;
+  // On Vercel, BFF and frontend share the same origin so this is correct
+  return getRequestOrigin(req);
+}
+
+function toFrontendUrl(req: VercelRequest, path: string): string {
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  return `${getFrontendBase(req)}${path}`;
+}
 
 function redirectToCallbackError(
   req: VercelRequest,
@@ -31,7 +43,7 @@ function redirectToCallbackError(
     params.set('state', state);
   }
 
-  redirect(res, `/oauth/callback?${params.toString()}`, 302, {
+  redirect(res, toFrontendUrl(req, `/oauth/callback?${params.toString()}`), 302, {
     'Cache-Control': 'no-store',
     'Set-Cookie': [
       getClearedSessionCookieHeader(req),
@@ -76,9 +88,9 @@ export default async function handler(req: VercelRequest, res: ServerResponse) {
     const session = await createSession(tokens);
 
     const returnPath = safeReturnTo(transaction.returnTo);
-    const successRedirect = transaction.customState
+    const successRedirect = toFrontendUrl(req, transaction.customState
       ? `${returnPath}${returnPath.includes('?') ? '&' : '?'}customState=${encodeURIComponent(transaction.customState)}`
-      : returnPath;
+      : returnPath);
 
     redirect(res, successRedirect, 302, {
       'Cache-Control': 'no-store',

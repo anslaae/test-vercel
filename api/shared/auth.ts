@@ -20,6 +20,8 @@ function requiredEnvAny(names: string[]) {
 }
 
 export function getAuthConfig(req: VercelRequest) {
+  // AUTH_ISSUER / VITE_AUTH_ISSUER are authoritative. API_BASE is not used for the issuer
+  // because the OAuth server may be on a different host (e.g. .dev vs .io).
   const issuer = requiredEnvAny(['AUTH_ISSUER', 'VITE_AUTH_ISSUER']).replace(/\/+$/, '');
   const clientId = requiredEnvAny(['CLIENT_ID', 'VITE_AUTH_CLIENT_ID']);
   const clientSecret = process.env.CLIENT_SECRET?.trim() || process.env.VITE_AUTH_CLIENT_SECRET?.trim();

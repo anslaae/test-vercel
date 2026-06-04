@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "start": "vite",
+    "dev:bff": "dotenv -e .env.local -- vercel dev --listen 3000",
+    "dev:local": "concurrently --names \"BFF,VITE\" --prefix-colors \"blue,green\" \"npm run dev:bff\" \"npm run dev\"",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext .ts,.tsx",
