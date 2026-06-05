@@ -48,6 +48,8 @@ function loadEmbedSelection(): MeEmbedKey[] {
 }
 
 export default function Dashboard() {
+    const [debugMode, setDebugMode] = useState(() => sessionStorage.getItem('oauth_debug_enabled') === '1');
+    const debuggerEnabled = debugMode;
     const [selectedEmbeds, setSelectedEmbeds] = useState<MeEmbedKey[]>(() => loadEmbedSelection());
     const embedQueryValue = selectedEmbeds.join(',');
     const meEndpointWithEmbeds = embedQueryValue ? `/api/me?embed=${embedQueryValue}` : '/api/me';
@@ -256,7 +258,22 @@ export default function Dashboard() {
         });
     };
 
+    const toggleDebugMode = () => {
+        const newMode = !debugMode;
+        setDebugMode(newMode);
+        if (newMode) {
+            sessionStorage.setItem('oauth_debug_enabled', '1');
+        } else {
+            sessionStorage.removeItem('oauth_debug_enabled');
+        }
+    };
+
     const handleRefreshUserData = () => {
+        if (!debuggerEnabled) {
+            void runRefreshUserData();
+            return;
+        }
+
         setShowUserDataExplainDialog(true);
     };
 
@@ -292,14 +309,16 @@ export default function Dashboard() {
                 });
             }
 
-            const currentAccessExpiry = sessionDetails?.tokens.access.expiresAt;
-            setUserDataDialogDetails([
-                {label: 'Request endpoint', value: `GET ${meEndpointWithEmbeds}`},
-                {label: 'Authorization header', value: 'Bearer <access_token>'},
-                {label: 'BFF token management', value: 'Automatic refresh if needed'},
-                {label: 'Current access token expiry', value: formatTimestamp(currentAccessExpiry)}
-            ]);
-            setShowUserDataCompleteDialog(true);
+             if (debuggerEnabled) {
+                 const currentAccessExpiry = sessionDetails?.tokens.access.expiresAt;
+                 setUserDataDialogDetails([
+                     {label: 'Request endpoint', value: `GET ${meEndpointWithEmbeds}`},
+                     {label: 'Authorization header', value: 'Bearer <access_token>'},
+                     {label: 'BFF token management', value: 'Automatic refresh if needed'},
+                     {label: 'Current access token expiry', value: formatTimestamp(currentAccessExpiry)}
+                 ]);
+                 setShowUserDataCompleteDialog(true);
+             }
         } catch (err) {
             if (err instanceof UnauthorizedError) {
                 await refreshSession();
@@ -322,6 +341,11 @@ export default function Dashboard() {
             return;
         }
 
+        if (!debuggerEnabled) {
+            void runRefreshSessionData();
+            return;
+        }
+
         setShowRefreshExplainDialog(true);
     };
 
@@ -334,13 +358,15 @@ export default function Dashboard() {
             const sessionData = await refreshSessionTokens();
             setSessionDetails(sessionData);
 
-            setRefreshDialogDetails([
-                {label: 'Token endpoint grant', value: 'refresh_token'},
-                {label: 'Previous access token expiry', value: formatTimestamp(previousAccessExpiry)},
-                {label: 'New access token expiry', value: formatTimestamp(sessionData.tokens.access.expiresAt)},
-                {label: 'Refresh token still present', value: sessionData.session.hasRefreshToken ? 'Yes' : 'No'}
-            ]);
-            setShowRefreshCompleteDialog(true);
+             setRefreshDialogDetails([
+                 {label: 'Token endpoint grant', value: 'refresh_token'},
+                 {label: 'Previous access token expiry', value: formatTimestamp(previousAccessExpiry)},
+                 {label: 'New access token expiry', value: formatTimestamp(sessionData.tokens.access.expiresAt)},
+                 {label: 'Refresh token still present', value: sessionData.session.hasRefreshToken ? 'Yes' : 'No'}
+             ]);
+             if (debuggerEnabled) {
+                 setShowRefreshCompleteDialog(true);
+             }
         } catch (err) {
             if (err instanceof UnauthorizedError) {
                 await refreshSession();
@@ -759,12 +785,21 @@ export default function Dashboard() {
                             onClick={handleRefreshUserData}
                             disabled={refreshingUserData}
                             className="refresh-button"
-                            title="Refresh user data"
+                            title="Request personal data from API: Browser sends session cookie, BFF attaches access token, calls protected API endpoint. BFF auto-refreshes token if expired."
                         >
                             <span className={`refresh-icon ${refreshingUserData ? 'spinning' : ''}`}>🔄</span>
                             Refresh
                         </button>
                         <span className="status-badge success">Active</span>
+                        <button
+                            onClick={toggleDebugMode}
+                            className={`status-badge debug-mode-toggle ${debuggerEnabled ? 'debugger-on' : 'debugger-off'}`}
+                            title={debuggerEnabled
+                                ? "Debug Mode is ON: Refresh buttons show step-by-step explanation dialogs. Click to switch to Fast Mode."
+                                : "Debug Mode is OFF: Refresh buttons execute instantly without dialogs. Click to switch to Debug Mode."}
+                        >
+                            {debuggerEnabled ? '🔍 Debug Mode: Enabled' : '⚡ Debug Mode: Disabled'}
+                        </button>
                     </div>
                 </div>
 
@@ -850,9 +885,9 @@ export default function Dashboard() {
                                 disabled={refreshingSessionData || !sessionDetails?.session.hasRefreshToken}
                                 className="learn-more-link-section token-refresh-button"
                                 title={
-                                    sessionDetails?.session.hasRefreshToken
-                                        ? 'Use the refresh token in the BFF to request a new access token'
-                                        : 'No refresh token available for this session'
+                                    !sessionDetails?.session.hasRefreshToken
+                                        ? 'No refresh token available for this session'
+                                        : 'Exchange refresh token for new access token: Browser sends session cookie with refresh token, BFF calls authorization server to obtain fresh tokens, new tokens stored server-side.'
                                 }
                             >
                                 <span

@@ -40,6 +40,8 @@ const LoginPage: React.FC = () => {
       return;
     }
 
+    sessionStorage.setItem('oauth_debug_enabled', debugMode ? '1' : '0');
+
     if (debugMode) {
       sessionStorage.setItem('oauth_debug', '1');
       setShowStep1Dialog(true);

@@ -449,6 +449,39 @@ body {
   color: var(--success-color);
 }
 
+.status-badge.debugger-on {
+  background: #ede9fe;
+  color: #7c3aed;
+}
+
+.status-badge.debugger-off {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.status-badge.debug-mode-toggle {
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.status-badge.debug-mode-toggle:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.status-badge.debug-mode-toggle:active {
+  transform: translateY(0);
+}
+
+.status-badge.debug-mode-toggle.debugger-on {
+  border-color: #7c3aed;
+}
+
+.status-badge.debug-mode-toggle.debugger-off {
+  border-color: #d97706;
+}
+
 .refresh-button {
   padding: 0.5rem 1rem;
   background: var(--primary-light);
