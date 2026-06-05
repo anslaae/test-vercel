@@ -51,8 +51,14 @@ export default function Dashboard() {
     const [debugMode, setDebugMode] = useState(() => sessionStorage.getItem('oauth_debug_enabled') === '1');
     const debuggerEnabled = debugMode;
     const [selectedEmbeds, setSelectedEmbeds] = useState<MeEmbedKey[]>(() => loadEmbedSelection());
-    const embedQueryValue = selectedEmbeds.join(',');
-    const meEndpointWithEmbeds = embedQueryValue ? `/api/me?embed=${embedQueryValue}` : '/api/me';
+    const [appliedEmbeds, setAppliedEmbeds] = useState<MeEmbedKey[]>(() => loadEmbedSelection());
+    const selectedEmbedQueryValue = selectedEmbeds.join(',');
+    const selectedMeEndpointWithEmbeds = selectedEmbedQueryValue ? `/api/me?embed=${selectedEmbedQueryValue}` : '/api/me';
+    const appliedEmbedQueryValue = appliedEmbeds.join(',');
+    const appliedMeEndpointWithEmbeds = appliedEmbedQueryValue ? `/api/me?embed=${appliedEmbedQueryValue}` : '/api/me';
+    const selectedEmbedSignature = [...selectedEmbeds].sort().join(',');
+    const appliedEmbedSignature = [...appliedEmbeds].sort().join(',');
+    const hasPendingEmbedChanges = selectedEmbedSignature !== appliedEmbedSignature;
     const [userInfo, setUserInfo] = useState<MeResponse | null>(null);
     const [userInfoError, setUserInfoError] = useState<{message: string; endpoint: string; status?: number} | null>(null);
     const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
@@ -126,7 +132,7 @@ export default function Dashboard() {
                 setUserInfoError(null);
 
                 const [userResult, sessionResult] = await Promise.allSettled([
-                    getUserInfo(selectedEmbeds),
+                    getUserInfo(appliedEmbeds),
                     getSessionDetails()
                 ]);
 
@@ -144,7 +150,7 @@ export default function Dashboard() {
                         }
                         // Retry both after session refresh
                         const [retryUser, retrySession] = await Promise.allSettled([
-                            getUserInfo(selectedEmbeds),
+                            getUserInfo(appliedEmbeds),
                             getSessionDetails()
                         ]);
                         if (!active) return;
@@ -155,7 +161,7 @@ export default function Dashboard() {
                             const retryErr = retryUser.reason;
                             setUserInfoError({
                                 message: retryErr instanceof Error ? retryErr.message : 'Failed to load personal details',
-                                endpoint: retryErr instanceof ApiError ? retryErr.endpoint : meEndpointWithEmbeds,
+                                endpoint: retryErr instanceof ApiError ? retryErr.endpoint : appliedMeEndpointWithEmbeds,
                                 status: retryErr instanceof ApiError ? retryErr.status : undefined
                             });
                         }
@@ -181,7 +187,7 @@ export default function Dashboard() {
                             return;
                         }
                         try {
-                            const retryData = await getUserInfo(selectedEmbeds);
+                            const retryData = await getUserInfo(appliedEmbeds);
                             if (!active) return;
                             setUserInfo(retryData);
                             setUserInfoError(null);
@@ -189,7 +195,7 @@ export default function Dashboard() {
                             if (!active) return;
                             setUserInfoError({
                                 message: retryErr instanceof Error ? retryErr.message : 'Failed to load personal details',
-                                endpoint: retryErr instanceof ApiError ? retryErr.endpoint : meEndpointWithEmbeds,
+                                endpoint: retryErr instanceof ApiError ? retryErr.endpoint : appliedMeEndpointWithEmbeds,
                                 status: retryErr instanceof ApiError ? retryErr.status : undefined
                             });
                         }
@@ -198,7 +204,7 @@ export default function Dashboard() {
                     console.error('[Dashboard] Personal details API failed:', err);
                     setUserInfoError({
                         message: err instanceof Error ? err.message : 'Failed to load personal details',
-                        endpoint: err instanceof ApiError ? err.endpoint : meEndpointWithEmbeds,
+                        endpoint: err instanceof ApiError ? err.endpoint : appliedMeEndpointWithEmbeds,
                         status: err instanceof ApiError ? err.status : undefined
                     });
                 }
@@ -234,7 +240,7 @@ export default function Dashboard() {
         return () => {
             active = false;
         };
-    }, [allowInitialDashboardLoad, refreshSession, embedQueryValue, selectedEmbeds]);
+    }, [allowInitialDashboardLoad, refreshSession, appliedEmbedQueryValue, appliedEmbeds]);
 
     useEffect(() => {
         return () => {
@@ -278,11 +284,16 @@ export default function Dashboard() {
     };
 
     const runRefreshUserData = async () => {
+        const requestEmbeds = selectedEmbeds;
+        const requestQueryValue = requestEmbeds.join(',');
+        const requestEndpoint = requestQueryValue ? `/api/me?embed=${requestQueryValue}` : '/api/me';
+
         try {
             setRefreshingUserData(true);
             setError(null);
             setUserInfoError(null);
-            const userData = await getUserInfo(selectedEmbeds);
+            setAppliedEmbeds(requestEmbeds);
+            const userData = await getUserInfo(requestEmbeds);
             setUserInfo(userData);
 
             try {
@@ -312,7 +323,7 @@ export default function Dashboard() {
              if (debuggerEnabled) {
                  const currentAccessExpiry = sessionDetails?.tokens.access.expiresAt;
                  setUserDataDialogDetails([
-                     {label: 'Request endpoint', value: `GET ${meEndpointWithEmbeds}`},
+                      {label: 'Request endpoint', value: `GET ${requestEndpoint}`},
                      {label: 'Authorization header', value: 'Bearer <access_token>'},
                      {label: 'BFF token management', value: 'Automatic refresh if needed'},
                      {label: 'Current access token expiry', value: formatTimestamp(currentAccessExpiry)}
@@ -327,7 +338,7 @@ export default function Dashboard() {
             console.error('[Dashboard] Failed to refresh user data:', err);
             setUserInfoError({
                 message: err instanceof Error ? err.message : 'Failed to refresh personal details',
-                endpoint: err instanceof ApiError ? err.endpoint : meEndpointWithEmbeds,
+                endpoint: err instanceof ApiError ? err.endpoint : requestEndpoint,
                 status: err instanceof ApiError ? err.status : undefined
             });
         } finally {
@@ -407,7 +418,7 @@ export default function Dashboard() {
                         title="Calling the Personal Details API"
                         description="The dashboard is now ready to load your information. Clicking Continue will trigger a browser request to the BFF. The browser sends only your HttpOnly session cookie, and the BFF adds the access token before calling the protected personal-details API. If the token has expired, the BFF can refresh it server-side before forwarding the request."
                         details={[
-                            {label: 'Browser request', value: `GET ${meEndpointWithEmbeds}`},
+                            {label: 'Browser request', value: `GET ${selectedMeEndpointWithEmbeds}`},
                             {label: 'Browser sends', value: 'Session cookie only' },
                             {label: 'BFF adds', value: 'Bearer access token' },
                             {label: 'Protected API', value: '/me endpoint' },
@@ -455,7 +466,7 @@ export default function Dashboard() {
         );
     }
 
-    const renderUserData = () => {
+    const getUserDataViewModel = () => {
         if (!userInfo) return null;
 
         const formatDisplayValue = (value: unknown) => {
@@ -507,27 +518,46 @@ export default function Dashboard() {
             ['Photo', links.photo?.href]
         ];
 
+        return {
+            personalInfoRows,
+            embeddedRows,
+            linksRows,
+            formatDisplayValue
+        };
+    };
+
+    const renderUserInfoGrid = () => {
+        const model = getUserDataViewModel();
+        if (!model) return null;
+
+        return (
+            <div className="user-info-grid">
+                {model.personalInfoRows.map(({label, value, className}) => (
+                    <div key={label} className={`info-item${className ? ` ${className}` : ''}`}>
+                        <div className="info-label">{label}</div>
+                        <div className="info-value">{model.formatDisplayValue(value)}</div>
+                    </div>
+                ))}
+            </div>
+        );
+    };
+
+    const renderUserRawDataSections = () => {
+        const model = getUserDataViewModel();
+        if (!model) return null;
+
         return (
             <>
-                <div className="user-info-grid">
-                    {personalInfoRows.map(({label, value, className}) => (
-                        <div key={label} className={`info-item${className ? ` ${className}` : ''}`}>
-                            <div className="info-label">{label}</div>
-                            <div className="info-value">{formatDisplayValue(value)}</div>
-                        </div>
-                    ))}
-                </div>
-
                 <details className="raw-data-section">
                     <summary className="raw-data-summary">
                         <h3 className="section-heading">Embedded Resources (if requested)</h3>
-                        <span className="summary-badge">{embeddedRows.length} fields</span>
+                        <span className="summary-badge">{model.embeddedRows.length} fields</span>
                     </summary>
                     <div className="kv-list">
-                        {embeddedRows.map(([key, value]) => (
+                        {model.embeddedRows.map(([key, value]) => (
                             <div key={key} className="kv-row">
                                 <span className="kv-key">{key}</span>
-                                <span className="kv-value">{formatDisplayValue(value)}</span>
+                                <span className="kv-value">{model.formatDisplayValue(value)}</span>
                             </div>
                         ))}
                     </div>
@@ -536,13 +566,13 @@ export default function Dashboard() {
                 <details className="raw-data-section" open>
                     <summary className="raw-data-summary">
                         <h3 className="section-heading">HAL Links</h3>
-                        <span className="summary-badge">{linksRows.length} links</span>
+                        <span className="summary-badge">{model.linksRows.length} links</span>
                     </summary>
                     <div className="kv-list">
-                        {linksRows.map(([key, value]) => (
+                        {model.linksRows.map(([key, value]) => (
                             <div key={key} className="kv-row">
                                 <span className="kv-key">{key}</span>
-                                <span className="kv-value">{formatDisplayValue(value)}</span>
+                                <span className="kv-value">{model.formatDisplayValue(value)}</span>
                             </div>
                         ))}
                     </div>
@@ -689,7 +719,7 @@ export default function Dashboard() {
                     title="Calling the Personal Details API"
                     description="The dashboard is now ready to load your information. Clicking Continue will trigger a browser request to the BFF. The browser sends only your HttpOnly session cookie, and the BFF adds the access token before calling the protected personal-details API. If the token has expired, the BFF can refresh it server-side before forwarding the request."
                     details={[
-                        {label: 'Browser request', value: `GET ${meEndpointWithEmbeds}`},
+                        {label: 'Browser request', value: `GET ${selectedMeEndpointWithEmbeds}`},
                         {label: 'Browser sends', value: 'Session cookie only' },
                         {label: 'BFF adds', value: 'Bearer access token' },
                         {label: 'Protected API', value: '/me endpoint' },
@@ -734,7 +764,7 @@ export default function Dashboard() {
                     description="Clicking Continue will request your personal details from the backend API. Your browser sends only the session cookie; the BFF automatically attaches the access token to the request. If the access token has expired, the BFF will silently refresh it using the refresh token before forwarding your request."
                     details={[
                         {label: 'Request flow', value: 'Browser → BFF → Backend API'},
-                        {label: 'Browser request', value: `GET ${meEndpointWithEmbeds}`},
+                        {label: 'Browser request', value: `GET ${selectedMeEndpointWithEmbeds}`},
                         {label: 'Session cookie', value: 'Sent with request (HttpOnly)'},
                         {label: 'Access token', value: 'Attached by BFF (never exposed to browser)'},
                         {label: 'Auto-refresh', value: 'BFF refreshes if token expired'}
@@ -782,16 +812,6 @@ export default function Dashboard() {
                     </h2>
                     <div className="card-header-actions">
                         <button
-                            onClick={handleRefreshUserData}
-                            disabled={refreshingUserData}
-                            className="refresh-button"
-                            title="Request personal data from API: Browser sends session cookie, BFF attaches access token, calls protected API endpoint. BFF auto-refreshes token if expired."
-                        >
-                            <span className={`refresh-icon ${refreshingUserData ? 'spinning' : ''}`}>🔄</span>
-                            Refresh
-                        </button>
-                        <span className="status-badge success">Active</span>
-                        <button
                             onClick={toggleDebugMode}
                             className={`status-badge debug-mode-toggle ${debuggerEnabled ? 'debugger-on' : 'debugger-off'}`}
                             title={debuggerEnabled
@@ -804,46 +824,68 @@ export default function Dashboard() {
                 </div>
 
                 <div className="card-content">
-                    {userInfoError && (
-                        <div className="api-error-banner">
-                            <div className="api-error-icon">⚠️</div>
-                            <div className="api-error-body">
-                                <div className="api-error-title">
-                                    Personal details API failed
-                                    {userInfoError.status && (
-                                        <span className="api-error-status">HTTP {userInfoError.status}</span>
+                    <div className="card-layout-grid">
+                        <div className="user-data-container">
+                            {userInfoError ? (
+                                <div className="api-error-banner api-error-inline">
+                                    <div className="api-error-icon">⚠️</div>
+                                    <div className="api-error-body">
+                                        <div className="api-error-title">
+                                            Personal details API failed
+                                            {userInfoError.status && (
+                                                <span className="api-error-status">HTTP {userInfoError.status}</span>
+                                            )}
+                                        </div>
+                                        <div className="api-error-endpoint">
+                                            <code>GET {userInfoError.endpoint}</code>
+                                        </div>
+                                        <div className="api-error-message">{userInfoError.message}</div>
+                                    </div>
+                                </div>
+                            ) : (
+                                renderUserInfoGrid()
+                            )}
+                        </div>
+
+                        <div className="data-controls-panel">
+                            <div className="data-controls-section">
+                                <h4 className="data-controls-title">Data Refresh</h4>
+                                <button
+                                    onClick={handleRefreshUserData}
+                                    disabled={refreshingUserData}
+                                    className="refresh-button"
+                                    title="Request personal data from API: Browser sends session cookie, BFF attaches access token, calls protected API endpoint. BFF auto-refreshes token if expired."
+                                >
+                                    <span className={`refresh-icon ${refreshingUserData ? 'spinning' : ''}`}>🔄</span>
+                                    Refresh Personal Data
+                                </button>
+                            </div>
+
+                            <div className="data-controls-section">
+                                <div className="embed-controls">
+                                    <div className="embed-controls-heading">Embedded resources to request</div>
+                                    <div className="embed-controls-options">
+                                        {EMBED_OPTIONS.map((option) => (
+                                            <label key={option.key} className="embed-option">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedEmbeds.includes(option.key)}
+                                                    onChange={() => toggleEmbed(option.key)}
+                                                />
+                                                <span>{option.label}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <div className="embed-controls-meta">Next refresh request: <code>{selectedMeEndpointWithEmbeds}</code></div>
+                                    {hasPendingEmbedChanges && (
+                                        <div className="embed-controls-pending">Pending changes - click Refresh Personal Data to apply</div>
                                     )}
                                 </div>
-                                <div className="api-error-endpoint">
-                                    <code>GET {userInfoError.endpoint}</code>
-                                </div>
-                                <div className="api-error-message">{userInfoError.message}</div>
                             </div>
-                            <button
-                                className="api-error-retry"
-                                onClick={handleRefreshUserData}
-                                disabled={refreshingUserData}
-                            >
-                                Retry
-                            </button>
                         </div>
-                    )}
-                    <div className="embed-controls">
-                        <div className="embed-controls-heading">Embedded resources to request</div>
-                        <div className="embed-controls-options">
-                            {EMBED_OPTIONS.map((option) => (
-                                <label key={option.key} className="embed-option">
-                                    <input
-                                        type="checkbox"
-                                        checked={selectedEmbeds.includes(option.key)}
-                                        onChange={() => toggleEmbed(option.key)}
-                                    />
-                                    <span>{option.label}</span>
-                                </label>
-                            ))}
-                        </div>
-                        <div className="embed-controls-meta">Current request: <code>{meEndpointWithEmbeds}</code></div>
                     </div>
+
+                    {renderUserRawDataSections()}
 
                     {customState && (
                         <div className="custom-state-banner">
@@ -859,11 +901,10 @@ export default function Dashboard() {
                             </div>
                         </div>
                     )}
-                    {renderUserData()}
                 </div>
             </div>
 
-            <div className="dashboard-card">
+            <div className="dashboard-card session-details-card">
                 <div className="card-header">
                     <h2 className="card-title">
                         <span className="card-icon">🔐</span>
