@@ -29,7 +29,7 @@ export function getAuthConfig(req: VercelRequest) {
     process.env.REDIRECT_URI?.trim() ||
     process.env.VITE_AUTH_REDIRECT_URI?.trim() ||
     `${getRequestOrigin(req)}/oauth/callback`;
-  const scope = (process.env.SCOPES || process.env.VITE_AUTH_SCOPES || 'openid profile').trim();
+  const scope = requiredEnvAny(['SCOPES', 'VITE_AUTH_SCOPES']);
 
   return {
     issuer,
