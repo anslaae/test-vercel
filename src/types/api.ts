@@ -215,6 +215,42 @@ export interface FieldHistory {
   };
 }
 
+export interface Employee {
+  profileId: string;
+  displayName: string;
+}
+
+export interface EmployeeList {
+  _embedded?: {
+    people: Employee[];
+  };
+  _links?: {
+    self?: HalLink;
+  };
+}
+
+export interface ChangeAwaitingApproval {
+  changeId: string;
+  profileId: string;
+  personName: string;
+  key: string;
+  label?: string;
+  value?: string;
+  displayValue?: string;
+  requestedOn?: string;
+}
+
+export interface ApprovalQueue {
+  _embedded?: {
+    changes: ChangeAwaitingApproval[];
+  };
+  _links?: {
+    self?: HalLink;
+  };
+}
+
+export type ChangeDecisionValue = 'APPROVED' | 'REJECTED';
+
 export interface TokenSummary {
   present: boolean;
   format: 'jwt' | 'opaque';

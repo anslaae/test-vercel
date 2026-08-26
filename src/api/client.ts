@@ -1,4 +1,16 @@
-import type { ChangeCollection, FieldCatalog, FieldChange, FieldHistory, FieldValues, ProfileResponse, ProfileUpdateResult, SessionDetails } from '../types/api';
+import type {
+  ApprovalQueue,
+  ChangeCollection,
+  ChangeDecisionValue,
+  EmployeeList,
+  FieldCatalog,
+  FieldChange,
+  FieldHistory,
+  FieldValues,
+  ProfileResponse,
+  ProfileUpdateResult,
+  SessionDetails
+} from '../types/api';
 
 const API_BASE = '/api';
 
@@ -141,6 +153,34 @@ export async function getMyFieldHistory(keys: string[] = []) {
     }
   });
   return response.json() as Promise<FieldHistory>;
+}
+
+export async function getMyEmployees() {
+  const response = await request('/profiles/employees', {
+    headers: {
+      Accept: 'application/hal+json, application/json'
+    }
+  });
+  return response.json() as Promise<EmployeeList>;
+}
+
+export async function getChangesAwaitingApproval() {
+  const response = await request('/profiles/changes/awaiting-approval', {
+    headers: {
+      Accept: 'application/hal+json, application/json'
+    }
+  });
+  return response.json() as Promise<ApprovalQueue>;
+}
+
+export async function decideChange(changeId: string, decision: ChangeDecisionValue, comment?: string) {
+  await request(`/profiles/changes/${encodeURIComponent(changeId)}/decision`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ decision, ...(comment ? { comment } : {}) })
+  });
 }
 
 export async function getMyChanges() {

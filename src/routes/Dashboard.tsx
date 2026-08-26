@@ -17,6 +17,8 @@ import ProfileEditPanel from '../components/ProfileEditPanel';
 import OutstandingChangesPanel from '../components/OutstandingChangesPanel';
 import FieldHistoryPanel from '../components/FieldHistoryPanel';
 import Tabs from '../components/Tabs';
+import DirectReportsPanel from '../components/DirectReportsPanel';
+import ApprovalQueuePanel from '../components/ApprovalQueuePanel';
 import '../styles.css';
 
 const EMBED_OPTIONS: Array<{ key: ProfileEmbedKey; label: string }> = [
@@ -886,6 +888,17 @@ export default function Dashboard() {
                 <>
                     <OutstandingChangesPanel refreshSignal={changesVersion}/>
                     <FieldHistoryPanel refreshSignal={changesVersion}/>
+                </>
+            )
+        },
+        {
+            id: 'manager',
+            label: 'Manager',
+            icon: '👥',
+            content: (
+                <>
+                    <DirectReportsPanel/>
+                    <ApprovalQueuePanel/>
                 </>
             )
         },
