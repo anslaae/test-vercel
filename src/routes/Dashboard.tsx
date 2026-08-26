@@ -51,8 +51,12 @@ function loadEmbedSelection(): ProfileEmbedKey[] {
 export default function Dashboard() {
     const [debugMode, setDebugMode] = useState(() => sessionStorage.getItem('oauth_debug_enabled') === '1');
     const debuggerEnabled = debugMode;
-    const [selectedEmbeds, setSelectedEmbeds] = useState<ProfileEmbedKey[]>(() => loadEmbedSelection());
-    const [appliedEmbeds, setAppliedEmbeds] = useState<ProfileEmbedKey[]>(() => loadEmbedSelection());
+    // Share one array reference between the two so the very first call to setAppliedEmbeds(selectedEmbeds)
+    // in runRefreshUserData (e.g. from a profile edit) isn't seen as a change -- fetchAllData's effect
+    // depends on appliedEmbeds by reference, and re-running it would flash the full-page loading screen.
+    const [initialEmbeds] = useState<ProfileEmbedKey[]>(() => loadEmbedSelection());
+    const [selectedEmbeds, setSelectedEmbeds] = useState<ProfileEmbedKey[]>(initialEmbeds);
+    const [appliedEmbeds, setAppliedEmbeds] = useState<ProfileEmbedKey[]>(initialEmbeds);
     const selectedEmbedQueryValue = selectedEmbeds.join(',');
     const selectedProfileEndpointWithEmbeds = selectedEmbedQueryValue ? `/api/profiles?embed=${selectedEmbedQueryValue}` : '/api/profiles';
     const appliedEmbedQueryValue = appliedEmbeds.join(',');
