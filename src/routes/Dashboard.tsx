@@ -15,6 +15,7 @@ import FlowDebugDialog from '../components/FlowDebugDialog';
 import AppInfoModal from '../components/AppInfoModal';
 import ProfileEditPanel from '../components/ProfileEditPanel';
 import OutstandingChangesPanel from '../components/OutstandingChangesPanel';
+import FieldHistoryPanel from '../components/FieldHistoryPanel';
 import '../styles.css';
 
 const EMBED_OPTIONS: Array<{ key: ProfileEmbedKey; label: string }> = [
@@ -924,6 +925,8 @@ export default function Dashboard() {
             />
 
             <OutstandingChangesPanel refreshSignal={changesVersion} />
+
+            <FieldHistoryPanel refreshSignal={changesVersion} />
 
             <div className="dashboard-card session-details-card">
                 <div className="card-header">

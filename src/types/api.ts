@@ -184,6 +184,37 @@ export interface ChangeCollection {
   };
 }
 
+export interface HistoryActor {
+  profileId?: string;
+  name: string;
+}
+
+export interface FieldHistoryEntry {
+  key: string;
+  label?: string;
+  value?: string;
+  displayValue?: string;
+  previousValue?: string;
+  previousDisplayValue?: string;
+  validFrom?: string;
+  validTo?: string;
+  changedOn?: string;
+  changedBy?: HistoryActor;
+  approvedOn?: string;
+  approvedBy?: HistoryActor;
+  reason?: string;
+  imported?: boolean;
+}
+
+export interface FieldHistory {
+  _embedded?: {
+    history: FieldHistoryEntry[];
+  };
+  _links?: {
+    self?: HalLink;
+  };
+}
+
 export interface TokenSummary {
   present: boolean;
   format: 'jwt' | 'opaque';

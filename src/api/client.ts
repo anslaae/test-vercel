@@ -1,4 +1,4 @@
-import type { ChangeCollection, FieldCatalog, FieldChange, FieldValues, ProfileResponse, ProfileUpdateResult, SessionDetails } from '../types/api';
+import type { ChangeCollection, FieldCatalog, FieldChange, FieldHistory, FieldValues, ProfileResponse, ProfileUpdateResult, SessionDetails } from '../types/api';
 
 const API_BASE = '/api';
 
@@ -131,6 +131,16 @@ export async function updateMyProfile(fields: FieldChange[]) {
     body: JSON.stringify({ fields })
   });
   return response.json() as Promise<ProfileUpdateResult>;
+}
+
+export async function getMyFieldHistory(keys: string[] = []) {
+  const query = keys.length > 0 ? `?${keys.map((key) => `key=${encodeURIComponent(key)}`).join('&')}` : '';
+  const response = await request(`/profiles/history${query}`, {
+    headers: {
+      Accept: 'application/hal+json, application/json'
+    }
+  });
+  return response.json() as Promise<FieldHistory>;
 }
 
 export async function getMyChanges() {

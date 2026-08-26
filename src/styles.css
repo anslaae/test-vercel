@@ -1402,6 +1402,11 @@ body {
   word-break: break-word;
 }
 
+.field-history-meta {
+  color: var(--text-light);
+  font-size: 0.78rem;
+}
+
 .field-list-actions {
   display: flex;
   align-items: center;
