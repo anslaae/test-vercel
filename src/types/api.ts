@@ -7,9 +7,6 @@ export interface HalLink {
 export interface AccountDetails {
   id: string | null;
   status: 'ACTIVE' | 'INACTIVE' | 'LOCKED' | null;
-  _links?: {
-    self?: HalLink;
-  };
 }
 
 export interface OrganizationDetails {
@@ -49,18 +46,18 @@ export interface PhotoDetails {
   };
 }
 
-export interface MeResponse {
+export interface ProfileResponse {
   profileId: string | null;
   firstName: string | null;
   middleName: string | null;
   lastName: string | null;
   email: string | null;
-  language: string | null;
-  locale: string | null;
-  dateFormat: string | null;
+  // Self-only: omitted by the API when viewing another person's profile.
+  language?: string | null;
+  locale?: string | null;
+  dateFormat?: string | null;
   _links?: {
     self?: HalLink;
-    account?: HalLink;
     organization?: HalLink;
     job?: HalLink;
     manager?: HalLink;

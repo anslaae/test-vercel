@@ -1,21 +1,21 @@
 import {useEffect, useMemo, useState} from 'react';
 import {
-    DEFAULT_ME_EMBEDS,
+    DEFAULT_PROFILE_EMBEDS,
     getSessionDetails,
-    getUserInfo,
-    getUserPhotoContent,
+    getProfile,
+    getProfilePhotoContent,
     refreshSessionTokens,
     UnauthorizedError,
     ApiError,
-    type MeEmbedKey
+    type ProfileEmbedKey
 } from '../api/client';
 import useAuth from '../auth/useAuth';
-import type {MeResponse, SessionDetails} from '../types/api';
+import type {ProfileResponse, SessionDetails} from '../types/api';
 import FlowDebugDialog from '../components/FlowDebugDialog';
 import AppInfoModal from '../components/AppInfoModal';
 import '../styles.css';
 
-const EMBED_OPTIONS: Array<{ key: MeEmbedKey; label: string }> = [
+const EMBED_OPTIONS: Array<{ key: ProfileEmbedKey; label: string }> = [
     {key: 'account', label: 'Account'},
     {key: 'organization', label: 'Organization'},
     {key: 'job', label: 'Job'},
@@ -23,22 +23,22 @@ const EMBED_OPTIONS: Array<{ key: MeEmbedKey; label: string }> = [
     {key: 'photo', label: 'Photo'}
 ];
 
-const EMBED_STORAGE_KEY = 'dashboard_me_embeds';
-const VALID_EMBED_KEYS = new Set<MeEmbedKey>(EMBED_OPTIONS.map((option) => option.key));
+const EMBED_STORAGE_KEY = 'dashboard_profile_embeds';
+const VALID_EMBED_KEYS = new Set<ProfileEmbedKey>(EMBED_OPTIONS.map((option) => option.key));
 
-function loadEmbedSelection(): MeEmbedKey[] {
+function loadEmbedSelection(): ProfileEmbedKey[] {
     const raw = sessionStorage.getItem(EMBED_STORAGE_KEY);
     if (!raw) {
-        return DEFAULT_ME_EMBEDS;
+        return DEFAULT_PROFILE_EMBEDS;
     }
 
     const parsed = raw
         .split(',')
         .map((value) => value.trim())
-        .filter((value): value is MeEmbedKey => VALID_EMBED_KEYS.has(value as MeEmbedKey));
+        .filter((value): value is ProfileEmbedKey => VALID_EMBED_KEYS.has(value as ProfileEmbedKey));
 
     if (parsed.length === 0) {
-        return DEFAULT_ME_EMBEDS;
+        return DEFAULT_PROFILE_EMBEDS;
     }
 
     // Keep stable rendering order based on the configured embed options.
@@ -50,16 +50,16 @@ function loadEmbedSelection(): MeEmbedKey[] {
 export default function Dashboard() {
     const [debugMode, setDebugMode] = useState(() => sessionStorage.getItem('oauth_debug_enabled') === '1');
     const debuggerEnabled = debugMode;
-    const [selectedEmbeds, setSelectedEmbeds] = useState<MeEmbedKey[]>(() => loadEmbedSelection());
-    const [appliedEmbeds, setAppliedEmbeds] = useState<MeEmbedKey[]>(() => loadEmbedSelection());
+    const [selectedEmbeds, setSelectedEmbeds] = useState<ProfileEmbedKey[]>(() => loadEmbedSelection());
+    const [appliedEmbeds, setAppliedEmbeds] = useState<ProfileEmbedKey[]>(() => loadEmbedSelection());
     const selectedEmbedQueryValue = selectedEmbeds.join(',');
-    const selectedMeEndpointWithEmbeds = selectedEmbedQueryValue ? `/api/me?embed=${selectedEmbedQueryValue}` : '/api/me';
+    const selectedProfileEndpointWithEmbeds = selectedEmbedQueryValue ? `/api/profiles?embed=${selectedEmbedQueryValue}` : '/api/profiles';
     const appliedEmbedQueryValue = appliedEmbeds.join(',');
-    const appliedMeEndpointWithEmbeds = appliedEmbedQueryValue ? `/api/me?embed=${appliedEmbedQueryValue}` : '/api/me';
+    const appliedProfileEndpointWithEmbeds = appliedEmbedQueryValue ? `/api/profiles?embed=${appliedEmbedQueryValue}` : '/api/profiles';
     const selectedEmbedSignature = [...selectedEmbeds].sort().join(',');
     const appliedEmbedSignature = [...appliedEmbeds].sort().join(',');
     const hasPendingEmbedChanges = selectedEmbedSignature !== appliedEmbedSignature;
-    const [userInfo, setUserInfo] = useState<MeResponse | null>(null);
+    const [userInfo, setUserInfo] = useState<ProfileResponse | null>(null);
     const [userInfoError, setUserInfoError] = useState<{message: string; endpoint: string; status?: number} | null>(null);
     const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
     const [loading, setLoading] = useState(
@@ -132,7 +132,7 @@ export default function Dashboard() {
                 setUserInfoError(null);
 
                 const [userResult, sessionResult] = await Promise.allSettled([
-                    getUserInfo(appliedEmbeds),
+                    getProfile(appliedEmbeds),
                     getSessionDetails()
                 ]);
 
@@ -150,7 +150,7 @@ export default function Dashboard() {
                         }
                         // Retry both after session refresh
                         const [retryUser, retrySession] = await Promise.allSettled([
-                            getUserInfo(appliedEmbeds),
+                            getProfile(appliedEmbeds),
                             getSessionDetails()
                         ]);
                         if (!active) return;
@@ -161,7 +161,7 @@ export default function Dashboard() {
                             const retryErr = retryUser.reason;
                             setUserInfoError({
                                 message: retryErr instanceof Error ? retryErr.message : 'Failed to load personal details',
-                                endpoint: retryErr instanceof ApiError ? retryErr.endpoint : appliedMeEndpointWithEmbeds,
+                                endpoint: retryErr instanceof ApiError ? retryErr.endpoint : appliedProfileEndpointWithEmbeds,
                                 status: retryErr instanceof ApiError ? retryErr.status : undefined
                             });
                         }
@@ -187,7 +187,7 @@ export default function Dashboard() {
                             return;
                         }
                         try {
-                            const retryData = await getUserInfo(appliedEmbeds);
+                            const retryData = await getProfile(appliedEmbeds);
                             if (!active) return;
                             setUserInfo(retryData);
                             setUserInfoError(null);
@@ -195,7 +195,7 @@ export default function Dashboard() {
                             if (!active) return;
                             setUserInfoError({
                                 message: retryErr instanceof Error ? retryErr.message : 'Failed to load personal details',
-                                endpoint: retryErr instanceof ApiError ? retryErr.endpoint : appliedMeEndpointWithEmbeds,
+                                endpoint: retryErr instanceof ApiError ? retryErr.endpoint : appliedProfileEndpointWithEmbeds,
                                 status: retryErr instanceof ApiError ? retryErr.status : undefined
                             });
                         }
@@ -204,14 +204,14 @@ export default function Dashboard() {
                     console.error('[Dashboard] Personal details API failed:', err);
                     setUserInfoError({
                         message: err instanceof Error ? err.message : 'Failed to load personal details',
-                        endpoint: err instanceof ApiError ? err.endpoint : appliedMeEndpointWithEmbeds,
+                        endpoint: err instanceof ApiError ? err.endpoint : appliedProfileEndpointWithEmbeds,
                         status: err instanceof ApiError ? err.status : undefined
                     });
                 }
 
                 // Photo is always non-blocking
                 try {
-                    const photoBlob = await getUserPhotoContent();
+                    const photoBlob = await getProfilePhotoContent();
                     if (!active) return;
                     setPhotoUrl((current) => {
                         if (current) URL.revokeObjectURL(current);
@@ -254,7 +254,7 @@ export default function Dashboard() {
         sessionStorage.setItem(EMBED_STORAGE_KEY, selectedEmbeds.join(','));
     }, [selectedEmbeds]);
 
-    const toggleEmbed = (embedKey: MeEmbedKey) => {
+    const toggleEmbed = (embedKey: ProfileEmbedKey) => {
         setSelectedEmbeds((current) => {
             if (current.includes(embedKey)) {
                 return current.filter((value) => value !== embedKey);
@@ -286,18 +286,18 @@ export default function Dashboard() {
     const runRefreshUserData = async () => {
         const requestEmbeds = selectedEmbeds;
         const requestQueryValue = requestEmbeds.join(',');
-        const requestEndpoint = requestQueryValue ? `/api/me?embed=${requestQueryValue}` : '/api/me';
+        const requestEndpoint = requestQueryValue ? `/api/profiles?embed=${requestQueryValue}` : '/api/profiles';
 
         try {
             setRefreshingUserData(true);
             setError(null);
             setUserInfoError(null);
             setAppliedEmbeds(requestEmbeds);
-            const userData = await getUserInfo(requestEmbeds);
+            const userData = await getProfile(requestEmbeds);
             setUserInfo(userData);
 
             try {
-                const photoBlob = await getUserPhotoContent();
+                const photoBlob = await getProfilePhotoContent();
                 setPhotoUrl((current) => {
                     if (current) {
                         URL.revokeObjectURL(current);
@@ -418,10 +418,10 @@ export default function Dashboard() {
                         title="Calling the Personal Details API"
                         description="The dashboard is now ready to load your information. Clicking Continue will trigger a browser request to the BFF. The browser sends only your HttpOnly session cookie, and the BFF adds the access token before calling the protected personal-details API. If the token has expired, the BFF can refresh it server-side before forwarding the request."
                         details={[
-                            {label: 'Browser request', value: `GET ${selectedMeEndpointWithEmbeds}`},
+                            {label: 'Browser request', value: `GET ${selectedProfileEndpointWithEmbeds}`},
                             {label: 'Browser sends', value: 'Session cookie only' },
                             {label: 'BFF adds', value: 'Bearer access token' },
-                            {label: 'Protected API', value: '/me endpoint' },
+                            {label: 'Protected API', value: '/profiles endpoint' },
                             {label: 'Token refresh', value: 'Handled server-side if needed' }
                         ]}
                         onContinue={handleDismissStep4}
@@ -511,7 +511,6 @@ export default function Dashboard() {
         const links = userInfo._links || {};
         const linksRows: Array<[string, unknown]> = [
             ['Self', links.self?.href],
-            ['Account', links.account?.href],
             ['Organization', links.organization?.href],
             ['Job', links.job?.href],
             ['Manager', links.manager?.href],
@@ -719,10 +718,10 @@ export default function Dashboard() {
                     title="Calling the Personal Details API"
                     description="The dashboard is now ready to load your information. Clicking Continue will trigger a browser request to the BFF. The browser sends only your HttpOnly session cookie, and the BFF adds the access token before calling the protected personal-details API. If the token has expired, the BFF can refresh it server-side before forwarding the request."
                     details={[
-                        {label: 'Browser request', value: `GET ${selectedMeEndpointWithEmbeds}`},
+                        {label: 'Browser request', value: `GET ${selectedProfileEndpointWithEmbeds}`},
                         {label: 'Browser sends', value: 'Session cookie only' },
                         {label: 'BFF adds', value: 'Bearer access token' },
-                        {label: 'Protected API', value: '/me endpoint' },
+                        {label: 'Protected API', value: '/profiles endpoint' },
                         {label: 'Token refresh', value: 'Handled server-side if needed' }
                     ]}
                     onContinue={handleDismissStep4}
@@ -764,7 +763,7 @@ export default function Dashboard() {
                     description="Clicking Continue will request your personal details from the backend API. Your browser sends only the session cookie; the BFF automatically attaches the access token to the request. If the access token has expired, the BFF will silently refresh it using the refresh token before forwarding your request."
                     details={[
                         {label: 'Request flow', value: 'Browser → BFF → Backend API'},
-                        {label: 'Browser request', value: `GET ${selectedMeEndpointWithEmbeds}`},
+                        {label: 'Browser request', value: `GET ${selectedProfileEndpointWithEmbeds}`},
                         {label: 'Session cookie', value: 'Sent with request (HttpOnly)'},
                         {label: 'Access token', value: 'Attached by BFF (never exposed to browser)'},
                         {label: 'Auto-refresh', value: 'BFF refreshes if token expired'}
@@ -876,7 +875,7 @@ export default function Dashboard() {
                                             </label>
                                         ))}
                                     </div>
-                                    <div className="embed-controls-meta">Next refresh request: <code>{selectedMeEndpointWithEmbeds}</code></div>
+                                    <div className="embed-controls-meta">Next refresh request: <code>{selectedProfileEndpointWithEmbeds}</code></div>
                                     {hasPendingEmbedChanges && (
                                         <div className="embed-controls-pending">Pending changes - click Refresh Personal Data to apply</div>
                                     )}

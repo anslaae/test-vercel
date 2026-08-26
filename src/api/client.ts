@@ -1,10 +1,10 @@
-import type { MeResponse, SessionDetails } from '../types/api';
+import type { ProfileResponse, SessionDetails } from '../types/api';
 
 const API_BASE = '/api';
 
-export type MeEmbedKey = 'account' | 'organization' | 'job' | 'manager' | 'photo';
+export type ProfileEmbedKey = 'account' | 'organization' | 'job' | 'manager' | 'photo';
 
-export const DEFAULT_ME_EMBEDS: MeEmbedKey[] = ['account', 'organization', 'job', 'manager', 'photo'];
+export const DEFAULT_PROFILE_EMBEDS: ProfileEmbedKey[] = ['account', 'organization', 'job', 'manager', 'photo'];
 
 export class UnauthorizedError extends Error {
   constructor() {
@@ -44,18 +44,31 @@ async function request(path: string, init?: RequestInit) {
   return response;
 }
 
-export async function getUserInfo(embeds: MeEmbedKey[] = DEFAULT_ME_EMBEDS) {
-  const query = embeds.length > 0 ? `?embed=${encodeURIComponent(embeds.join(','))}` : '';
-  const response = await request(`/me${query}`, {
+function buildEmbedQuery(embeds: ProfileEmbedKey[]) {
+  return embeds.length > 0 ? `?embed=${encodeURIComponent(embeds.join(','))}` : '';
+}
+
+export async function getProfile(embeds: ProfileEmbedKey[] = DEFAULT_PROFILE_EMBEDS) {
+  const response = await request(`/profiles${buildEmbedQuery(embeds)}`, {
     headers: {
       Accept: 'application/hal+json, application/json'
     }
   });
-  return response.json() as Promise<MeResponse>;
+  return response.json() as Promise<ProfileResponse>;
 }
 
-export async function getUserPhotoContent() {
-  const response = await fetch(`${API_BASE}/me/photo/content`, {
+export async function getProfileById(profileId: string, embeds: ProfileEmbedKey[] = DEFAULT_PROFILE_EMBEDS) {
+  const response = await request(`/profiles/${encodeURIComponent(profileId)}${buildEmbedQuery(embeds)}`, {
+    headers: {
+      Accept: 'application/hal+json, application/json'
+    }
+  });
+  return response.json() as Promise<ProfileResponse>;
+}
+
+export async function getProfilePhotoContent(profileId?: string) {
+  const path = profileId ? `/profiles/${encodeURIComponent(profileId)}/photo/content` : '/profiles/photo/content';
+  const response = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
     headers: {
       Accept: 'image/*, application/octet-stream'
