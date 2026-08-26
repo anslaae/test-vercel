@@ -251,6 +251,34 @@ export interface ApprovalQueue {
 
 export type ChangeDecisionValue = 'APPROVED' | 'REJECTED';
 
+export interface PersonSummary {
+  profileId: string;
+  displayName: string;
+}
+
+export interface PersonCollection {
+  _embedded?: {
+    people: PersonSummary[];
+  };
+  _links?: {
+    self?: HalLink;
+  };
+}
+
+export type LookupTerm = { email: string } | { employeeId: string } | { name: string };
+
+export interface OrganizationOption {
+  id: string;
+  name: string;
+  parentName?: string;
+}
+
+export interface OrganizationOptions {
+  _embedded?: {
+    organizationOptionResponseList: OrganizationOption[];
+  };
+}
+
 export interface TokenSummary {
   present: boolean;
   format: 'jwt' | 'opaque';

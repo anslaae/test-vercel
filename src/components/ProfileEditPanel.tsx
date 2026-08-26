@@ -1,12 +1,46 @@
 import { useMemo, useState, useEffect } from 'react';
-import { getEditableFields, getFieldValues, updateMyProfile, ApiError, UnauthorizedError } from '../api/client';
+import {
+  getEditableFields,
+  getFieldValues,
+  updateMyProfile,
+  getMyOrganizationOptions,
+  lookupPeople,
+  ApiError,
+  UnauthorizedError
+} from '../api/client';
 import type { FieldDescriptor, FieldValue, FieldStatus, FieldOutcome } from '../types/api';
+import LookupSelect from './LookupSelect';
 import '../styles.css';
 
-// First pass: single-valued fields with a plain-string wire format. MULTI_SELECT, PERSON,
-// MULTI_PERSON, ORGANIZATION, POSITION, MONEY and TEXT_MAP need their own lookup/entry UI
-// and are listed read-only for now.
-const EDITABLE_TYPES = new Set<FieldDescriptor['type']>(['TEXT', 'NUMBER', 'DATE', 'BOOLEAN', 'SINGLE_SELECT']);
+// First pass: single-valued fields with a plain-string wire format, plus PERSON/ORGANIZATION
+// via their own lookup endpoints. MULTI_SELECT, MULTI_PERSON, POSITION, MONEY and TEXT_MAP
+// need their own multi-value/entry UI and are listed read-only for now.
+const EDITABLE_TYPES = new Set<FieldDescriptor['type']>([
+  'TEXT',
+  'NUMBER',
+  'DATE',
+  'BOOLEAN',
+  'SINGLE_SELECT',
+  'PERSON',
+  'ORGANIZATION'
+]);
+
+async function searchPeople(term: string) {
+  const isEmail = term.includes('@');
+  const isMultiWord = term.trim().includes(' ');
+  const body = isEmail ? { email: term } : isMultiWord ? { name: term } : { employeeId: term };
+  const result = await lookupPeople(body);
+  return (result._embedded?.people ?? []).map((person) => ({ id: person.profileId, label: person.displayName }));
+}
+
+async function searchOrganizations(term: string) {
+  const result = await getMyOrganizationOptions(term);
+  return (result._embedded?.organizationOptionResponseList ?? []).map((option) => ({
+    id: option.id,
+    label: option.name,
+    sublabel: option.parentName
+  }));
+}
 
 const STATUS_LABEL: Record<FieldStatus, string> = {
   APPLIED: 'Applied',
@@ -248,6 +282,22 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
                             </option>
                           ))}
                         </select>
+                      ) : field.type === 'PERSON' ? (
+                        <LookupSelect
+                          currentLabel={values[field.key]?.displayValue}
+                          onChange={(id) => setDraftValue(id)}
+                          search={searchPeople}
+                          placeholder="Search by name, email, or employee ID"
+                          minLength={3}
+                        />
+                      ) : field.type === 'ORGANIZATION' ? (
+                        <LookupSelect
+                          currentLabel={values[field.key]?.displayValue}
+                          onChange={(id) => setDraftValue(id)}
+                          search={searchOrganizations}
+                          placeholder="Search organization by name"
+                          minLength={2}
+                        />
                       ) : (
                         <input
                           className="login-option-input"

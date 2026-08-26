@@ -7,6 +7,9 @@ import type {
   FieldChange,
   FieldHistory,
   FieldValues,
+  LookupTerm,
+  OrganizationOptions,
+  PersonCollection,
   ProfileResponse,
   ProfileUpdateResult,
   SessionDetails
@@ -153,6 +156,29 @@ export async function getMyFieldHistory(keys: string[] = []) {
     }
   });
   return response.json() as Promise<FieldHistory>;
+}
+
+export async function getMyOrganizationOptions(name: string) {
+  const response = await request(`/profiles/organization/options?name=${encodeURIComponent(name)}`, {
+    headers: {
+      Accept: 'application/hal+json, application/json'
+    }
+  });
+  return response.json() as Promise<OrganizationOptions>;
+}
+
+// /lookup is its own top-level API (not under /profiles) but the BFF proxy forwards any
+// /api/* path straight through, so no proxy changes are needed to reach it.
+export async function lookupPeople(term: LookupTerm) {
+  const response = await request('/lookup', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/hal+json, application/json'
+    },
+    body: JSON.stringify(term)
+  });
+  return response.json() as Promise<PersonCollection>;
 }
 
 export async function getMyEmployees() {
