@@ -19,6 +19,8 @@ import FieldHistoryPanel from '../components/FieldHistoryPanel';
 import Tabs from '../components/Tabs';
 import DirectReportsPanel from '../components/DirectReportsPanel';
 import ApprovalQueuePanel from '../components/ApprovalQueuePanel';
+import FindPersonPanel from '../components/FindPersonPanel';
+import PersonDetailModal from '../components/PersonDetailModal';
 import '../styles.css';
 
 const EMBED_OPTIONS: Array<{ key: ProfileEmbedKey; label: string }> = [
@@ -71,6 +73,7 @@ export default function Dashboard() {
     const hasPendingEmbedChanges = selectedEmbedSignature !== appliedEmbedSignature;
     const [userInfo, setUserInfo] = useState<ProfileResponse | null>(null);
     const [changesVersion, setChangesVersion] = useState(0);
+    const [viewingProfile, setViewingProfile] = useState<{ profileId: string; displayName: string } | null>(null);
     const [userInfoError, setUserInfoError] = useState<{message: string; endpoint: string; status?: number} | null>(null);
     const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
     const [loading, setLoading] = useState(
@@ -897,8 +900,9 @@ export default function Dashboard() {
             icon: '👥',
             content: (
                 <>
-                    <DirectReportsPanel/>
-                    <ApprovalQueuePanel/>
+                    <FindPersonPanel onSelect={(profileId, displayName) => setViewingProfile({profileId, displayName})}/>
+                    <DirectReportsPanel onViewProfile={(profileId, displayName) => setViewingProfile({profileId, displayName})}/>
+                    <ApprovalQueuePanel onViewProfile={(profileId, displayName) => setViewingProfile({profileId, displayName})}/>
                 </>
             )
         },
@@ -997,6 +1001,10 @@ export default function Dashboard() {
                 />
             )}
             <AppInfoModal open={showAppInfo} onClose={() => setShowAppInfo(false)}/>
+
+            {viewingProfile && (
+                <PersonDetailModal profileId={viewingProfile.profileId} onClose={() => setViewingProfile(null)}/>
+            )}
 
             <div className="dashboard-header">
                 <div>

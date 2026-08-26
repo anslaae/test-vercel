@@ -3,7 +3,11 @@ import { getChangesAwaitingApproval, decideChange, ApiError, UnauthorizedError }
 import type { ChangeAwaitingApproval } from '../types/api';
 import '../styles.css';
 
-export default function ApprovalQueuePanel() {
+interface ApprovalQueuePanelProps {
+  onViewProfile?: (profileId: string, displayName: string) => void;
+}
+
+export default function ApprovalQueuePanel({ onViewProfile }: ApprovalQueuePanelProps) {
   const [changes, setChanges] = useState<ChangeAwaitingApproval[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -12,16 +16,18 @@ export default function ApprovalQueuePanel() {
   const [rejectComment, setRejectComment] = useState('');
   const [decisionError, setDecisionError] = useState<string | null>(null);
 
-  const loadQueue = async () => {
+  // silent=true skips the loading flag so a post-decision refresh updates the list in place
+  // instead of flashing the whole panel back to a loading skeleton.
+  const loadQueue = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setLoadError(null);
       const result = await getChangesAwaitingApproval();
       setChanges(result._embedded?.changes ?? []);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Failed to load approval queue');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -29,6 +35,8 @@ export default function ApprovalQueuePanel() {
     void loadQueue();
   }, []);
 
+  // decidingId gates ALL rows' buttons, not just the row being decided -- deciding two changes
+  // concurrently would otherwise let a second decision fire while the first is still in flight.
   const decide = async (change: ChangeAwaitingApproval, decision: 'APPROVED' | 'REJECTED', comment?: string) => {
     try {
       setDecidingId(change.changeId);
@@ -36,7 +44,7 @@ export default function ApprovalQueuePanel() {
       await decideChange(change.changeId, decision, comment);
       setRejectingId(null);
       setRejectComment('');
-      await loadQueue();
+      await loadQueue(true);
     } catch (err) {
       if (err instanceof UnauthorizedError) {
         setDecisionError(err.message);
@@ -100,6 +108,7 @@ export default function ApprovalQueuePanel() {
           {(changes ?? []).map((change) => {
             const isRejecting = rejectingId === change.changeId;
             const isDeciding = decidingId === change.changeId;
+            const anyDecisionInFlight = decidingId !== null;
 
             return (
               <div
@@ -108,7 +117,18 @@ export default function ApprovalQueuePanel() {
               >
                 <div className="field-list-main">
                   <span className="field-list-label">
-                    {change.personName} · {change.label ?? change.key}
+                    {onViewProfile ? (
+                      <button
+                        type="button"
+                        className="field-list-person-link"
+                        onClick={() => onViewProfile(change.profileId, change.personName)}
+                      >
+                        {change.personName}
+                      </button>
+                    ) : (
+                      change.personName
+                    )}{' '}
+                    · {change.label ?? change.key}
                   </span>
                   <span className="field-list-value">
                     {change.displayValue ?? change.value ?? 'Not set'}
@@ -129,7 +149,7 @@ export default function ApprovalQueuePanel() {
                       type="button"
                       className="field-list-withdraw-btn"
                       onClick={() => void decide(change, 'REJECTED', rejectComment || undefined)}
-                      disabled={isDeciding}
+                      disabled={anyDecisionInFlight}
                     >
                       {isDeciding ? 'Rejecting...' : 'Confirm Reject'}
                     </button>
@@ -140,7 +160,7 @@ export default function ApprovalQueuePanel() {
                         setRejectingId(null);
                         setRejectComment('');
                       }}
-                      disabled={isDeciding}
+                      disabled={anyDecisionInFlight}
                     >
                       Cancel
                     </button>
@@ -151,15 +171,18 @@ export default function ApprovalQueuePanel() {
                       type="button"
                       className="field-list-edit-btn"
                       onClick={() => void decide(change, 'APPROVED')}
-                      disabled={isDeciding}
+                      disabled={anyDecisionInFlight}
                     >
                       {isDeciding ? 'Approving...' : 'Approve'}
                     </button>
                     <button
                       type="button"
                       className="field-list-withdraw-btn"
-                      onClick={() => setRejectingId(change.changeId)}
-                      disabled={isDeciding}
+                      onClick={() => {
+                        setRejectingId(change.changeId);
+                        setRejectComment('');
+                      }}
+                      disabled={anyDecisionInFlight}
                     >
                       Reject
                     </button>

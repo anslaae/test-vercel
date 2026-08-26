@@ -2,9 +2,9 @@ import { useMemo, useState, useEffect } from 'react';
 import {
   getEditableFields,
   getFieldValues,
-  updateMyProfile,
-  getMyOrganizationOptions,
-  lookupPeople,
+  updateProfile,
+  searchPeopleByTerm,
+  searchOrganizationsByTerm,
   ApiError,
   UnauthorizedError
 } from '../api/client';
@@ -24,23 +24,6 @@ const EDITABLE_TYPES = new Set<FieldDescriptor['type']>([
   'PERSON',
   'ORGANIZATION'
 ]);
-
-async function searchPeople(term: string) {
-  const isEmail = term.includes('@');
-  const isMultiWord = term.trim().includes(' ');
-  const body = isEmail ? { email: term } : isMultiWord ? { name: term } : { employeeId: term };
-  const result = await lookupPeople(body);
-  return (result._embedded?.people ?? []).map((person) => ({ id: person.profileId, label: person.displayName }));
-}
-
-async function searchOrganizations(term: string) {
-  const result = await getMyOrganizationOptions(term);
-  return (result._embedded?.organizationOptionResponseList ?? []).map((option) => ({
-    id: option.id,
-    label: option.name,
-    sublabel: option.parentName
-  }));
-}
 
 const STATUS_LABEL: Record<FieldStatus, string> = {
   APPLIED: 'Applied',
@@ -69,10 +52,11 @@ function canEditInline(field: FieldDescriptor) {
 const PREVIEW_COUNT = 6;
 
 interface ProfileEditPanelProps {
+  profileId?: string;
   onProfileUpdated?: () => void;
 }
 
-export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelProps) {
+export default function ProfileEditPanel({ profileId, onProfileUpdated }: ProfileEditPanelProps) {
   const [fields, setFields] = useState<FieldDescriptor[] | null>(null);
   const [values, setValues] = useState<Record<string, FieldValue>>({});
   const [loading, setLoading] = useState(true);
@@ -85,11 +69,13 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [lastOutcomes, setLastOutcomes] = useState<Record<string, FieldOutcome>>({});
 
-  const loadCatalog = async () => {
+  // silent=true skips the loading flag so a post-save refresh updates values in place instead
+  // of flashing the whole panel back to a loading skeleton.
+  const loadCatalog = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setLoadError(null);
-      const [catalog, fieldValues] = await Promise.all([getEditableFields(), getFieldValues()]);
+      const [catalog, fieldValues] = await Promise.all([getEditableFields(profileId), getFieldValues(profileId)]);
       const valuesByKey: Record<string, FieldValue> = {};
       for (const value of fieldValues._embedded?.values ?? []) {
         valuesByKey[value.key] = value;
@@ -100,13 +86,13 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Failed to load editable fields');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     void loadCatalog();
-  }, []);
+  }, [profileId]);
 
   const isSearching = search.trim().length > 0;
 
@@ -144,12 +130,12 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
     try {
       setSubmitting(true);
       setSubmitError(null);
-      const updateResult = await updateMyProfile([{ key: field.key, value: draftValue }]);
+      const updateResult = await updateProfile([{ key: field.key, value: draftValue }], profileId);
       const outcome = updateResult.fields.find((entry) => entry.key === field.key);
       if (outcome) {
         setLastOutcomes((current) => ({ ...current, [field.key]: outcome }));
       }
-      await loadCatalog();
+      await loadCatalog(true);
       setEditingKey(null);
       onProfileUpdated?.();
     } catch (err) {
@@ -170,7 +156,7 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
         <div className="card-header">
           <h2 className="card-title">
             <span className="card-icon">✏️</span>
-            Edit Your Profile
+            {profileId ? 'Edit Profile' : 'Edit Your Profile'}
           </h2>
         </div>
         <p className="loading-text">Loading editable fields...</p>
@@ -184,7 +170,7 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
         <div className="card-header">
           <h2 className="card-title">
             <span className="card-icon">✏️</span>
-            Edit Your Profile
+            {profileId ? 'Edit Profile' : 'Edit Your Profile'}
           </h2>
         </div>
         <div className="api-error-banner api-error-inline">
@@ -203,13 +189,17 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
       <div className="card-header">
         <h2 className="card-title">
           <span className="card-icon">✏️</span>
-          Edit Your Profile
+          {profileId ? 'Edit Profile' : 'Edit Your Profile'}
         </h2>
-        <span className="summary-badge">GET /profiles/fields · PATCH /profiles</span>
+        <span className="summary-badge">
+          {profileId ? `GET/PATCH /profiles/${profileId.slice(0, 8)}…` : 'GET /profiles/fields · PATCH /profiles'}
+        </span>
       </div>
 
       {(fields ?? []).length === 0 ? (
-        <p className="loading-text">You have no editable fields on this profile.</p>
+        <p className="loading-text">
+          {profileId ? 'This person has no editable fields.' : 'You have no editable fields on this profile.'}
+        </p>
       ) : (
         <>
           <div className="field-list-overview">
@@ -286,7 +276,7 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
                         <LookupSelect
                           currentLabel={values[field.key]?.displayValue}
                           onChange={(id) => setDraftValue(id)}
-                          search={searchPeople}
+                          search={searchPeopleByTerm}
                           placeholder="Search by name, email, or employee ID"
                           minLength={3}
                         />
@@ -294,7 +284,7 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
                         <LookupSelect
                           currentLabel={values[field.key]?.displayValue}
                           onChange={(id) => setDraftValue(id)}
-                          search={searchOrganizations}
+                          search={(term) => searchOrganizationsByTerm(term, profileId)}
                           placeholder="Search organization by name"
                           minLength={2}
                         />
@@ -332,7 +322,12 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
                         </span>
                       )}
                       {editable ? (
-                        <button type="button" className="field-list-edit-btn" onClick={() => startEdit(field)}>
+                        <button
+                          type="button"
+                          className="field-list-edit-btn"
+                          onClick={() => startEdit(field)}
+                          disabled={submitting}
+                        >
                           Edit
                         </button>
                       ) : (

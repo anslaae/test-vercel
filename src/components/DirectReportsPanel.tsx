@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
-import { getMyEmployees, getProfileById, ApiError, UnauthorizedError } from '../api/client';
-import type { Employee, ProfileResponse } from '../types/api';
+import { getMyEmployees } from '../api/client';
+import type { Employee } from '../types/api';
 import '../styles.css';
 
-export default function DirectReportsPanel() {
+interface DirectReportsPanelProps {
+  onViewProfile: (profileId: string, displayName: string) => void;
+}
+
+export default function DirectReportsPanel({ onViewProfile }: DirectReportsPanelProps) {
   const [employees, setEmployees] = useState<Employee[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [profiles, setProfiles] = useState<Record<string, ProfileResponse>>({});
-  const [profileLoadingId, setProfileLoadingId] = useState<string | null>(null);
-  const [profileError, setProfileError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -35,35 +35,6 @@ export default function DirectReportsPanel() {
       active = false;
     };
   }, []);
-
-  const toggleExpand = async (employee: Employee) => {
-    if (expandedId === employee.profileId) {
-      setExpandedId(null);
-      return;
-    }
-
-    setExpandedId(employee.profileId);
-    setProfileError(null);
-
-    if (profiles[employee.profileId]) {
-      return;
-    }
-
-    try {
-      setProfileLoadingId(employee.profileId);
-      const profile = await getProfileById(employee.profileId, ['organization', 'job', 'manager']);
-      setProfiles((current) => ({ ...current, [employee.profileId]: profile }));
-    } catch (err) {
-      if (err instanceof UnauthorizedError) {
-        setProfileError(err.message);
-        return;
-      }
-      const detail = err instanceof ApiError ? err.detail : undefined;
-      setProfileError(detail || (err instanceof Error ? err.message : 'Failed to load profile'));
-    } finally {
-      setProfileLoadingId(null);
-    }
-  };
 
   if (loading) {
     return (
@@ -113,40 +84,22 @@ export default function DirectReportsPanel() {
         <p className="loading-text">You have no direct reports.</p>
       ) : (
         <div className="field-list">
-          {(employees ?? []).map((employee) => {
-            const isExpanded = expandedId === employee.profileId;
-            const profile = profiles[employee.profileId];
-
-            return (
-              <div
-                key={employee.profileId}
-                className={`field-list-row${isExpanded ? ' field-list-row-editing' : ''}`}
-              >
-                <div className="field-list-main">
-                  <span className="field-list-label">{employee.displayName}</span>
-                  {isExpanded &&
-                    (profileLoadingId === employee.profileId ? (
-                      <span className="field-list-value">Loading profile...</span>
-                    ) : profileError ? (
-                      <span className="field-edit-error">{profileError}</span>
-                    ) : profile ? (
-                      <span className="field-list-value">
-                        {profile.email ?? 'No email'}
-                        {profile._embedded?.organization?.name && ` · ${profile._embedded.organization.name}`}
-                        {profile._embedded?.job?.title && ` · ${profile._embedded.job.title}`}
-                        {profile._embedded?.manager?.displayName &&
-                          ` · reports to ${profile._embedded.manager.displayName}`}
-                      </span>
-                    ) : null)}
-                </div>
-                <div className="field-list-actions">
-                  <button type="button" className="field-list-edit-btn" onClick={() => void toggleExpand(employee)}>
-                    {isExpanded ? 'Hide' : 'View Profile'}
-                  </button>
-                </div>
+          {(employees ?? []).map((employee) => (
+            <div key={employee.profileId} className="field-list-row">
+              <div className="field-list-main">
+                <span className="field-list-label">{employee.displayName}</span>
               </div>
-            );
-          })}
+              <div className="field-list-actions">
+                <button
+                  type="button"
+                  className="field-list-edit-btn"
+                  onClick={() => onViewProfile(employee.profileId, employee.displayName)}
+                >
+                  View Profile
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

@@ -1008,6 +1008,60 @@ body {
   gap: 0.35rem;
 }
 
+/* ── Person Detail Modal ───────────────────────────────────────── */
+.person-detail-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.62);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  padding: 1rem;
+}
+
+.person-detail-modal {
+  width: min(980px, 100%);
+  max-height: min(90vh, 960px);
+  overflow-y: auto;
+  background: var(--bg-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  padding: 1.4rem 1.4rem 1.6rem;
+  animation: slideUp 0.25s ease-out;
+}
+
+.person-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.person-detail-avatar {
+  width: 2.8rem;
+  height: 2.8rem;
+}
+
+.person-detail-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.person-detail-name {
+  margin: 0;
+  font-size: 1.3rem;
+  color: var(--text-primary);
+}
+
+.person-detail-email {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
 /* ── Flow Debug Dialog ─────────────────────────────────────────── */
 .debug-overlay {
   position: fixed;
@@ -1479,6 +1533,22 @@ body {
   color: var(--text-secondary);
   font-size: 0.85rem;
   word-break: break-word;
+}
+
+.field-list-person-link {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--primary-color);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.field-list-person-link:hover {
+  color: var(--primary-hover);
 }
 
 .field-history-meta {

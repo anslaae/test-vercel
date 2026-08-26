@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getMyChanges, cancelMyChange, ApiError, UnauthorizedError } from '../api/client';
+import { getChanges, cancelChange, ApiError, UnauthorizedError } from '../api/client';
 import type { PendingChange, ChangeKind } from '../types/api';
 import '../styles.css';
 
@@ -14,39 +14,51 @@ const KIND_CLASS: Record<ChangeKind, string> = {
 };
 
 interface OutstandingChangesPanelProps {
+  profileId?: string;
   refreshSignal?: number;
 }
 
-export default function OutstandingChangesPanel({ refreshSignal }: OutstandingChangesPanelProps) {
+export default function OutstandingChangesPanel({ profileId, refreshSignal }: OutstandingChangesPanelProps) {
   const [changes, setChanges] = useState<PendingChange[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
 
-  const loadChanges = async () => {
+  // silent=true skips the loading flag so a post-withdraw refresh updates the list in place
+  // instead of flashing the whole panel back to a loading skeleton. isActive lets a caller in
+  // an effect ignore a stale response if a newer request has since superseded it.
+  const loadChanges = async (silent = false, isActive: () => boolean = () => true) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setLoadError(null);
-      const collection = await getMyChanges();
+      const collection = await getChanges(profileId);
+      if (!isActive()) return;
       setChanges(collection._embedded?.changes ?? []);
     } catch (err) {
+      if (!isActive()) return;
       setLoadError(err instanceof Error ? err.message : 'Failed to load outstanding changes');
     } finally {
-      setLoading(false);
+      if (isActive() && !silent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    void loadChanges();
-  }, [refreshSignal]);
+    let active = true;
+    void loadChanges(false, () => active);
+    return () => {
+      active = false;
+    };
+  }, [profileId, refreshSignal]);
 
+  // withdrawingId gates ALL rows' buttons, not just the row being withdrawn -- withdrawing two
+  // changes concurrently would otherwise let a second withdraw fire while the first is in flight.
   const withdraw = async (change: PendingChange) => {
     try {
       setWithdrawingId(change.id);
       setWithdrawError(null);
-      await cancelMyChange(change.id);
-      await loadChanges();
+      await cancelChange(change.id, profileId);
+      await loadChanges(true);
     } catch (err) {
       if (err instanceof UnauthorizedError) {
         setWithdrawError(err.message);
@@ -104,7 +116,9 @@ export default function OutstandingChangesPanel({ refreshSignal }: OutstandingCh
       </div>
 
       {(changes ?? []).length === 0 ? (
-        <p className="loading-text">You have no outstanding changes.</p>
+        <p className="loading-text">
+          {profileId ? 'This person has no outstanding changes.' : 'You have no outstanding changes.'}
+        </p>
       ) : (
         <div className="field-list">
           {(changes ?? []).map((change) => (
@@ -123,7 +137,7 @@ export default function OutstandingChangesPanel({ refreshSignal }: OutstandingCh
                   type="button"
                   className="field-list-withdraw-btn"
                   onClick={() => void withdraw(change)}
-                  disabled={withdrawingId === change.id}
+                  disabled={withdrawingId !== null}
                 >
                   {withdrawingId === change.id ? 'Withdrawing...' : 'Withdraw'}
                 </button>

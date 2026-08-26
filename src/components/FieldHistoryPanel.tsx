@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getMyFieldHistory } from '../api/client';
+import { getFieldHistory } from '../api/client';
 import type { FieldHistoryEntry } from '../types/api';
 import '../styles.css';
 
@@ -8,10 +8,11 @@ import '../styles.css';
 const PREVIEW_COUNT = 6;
 
 interface FieldHistoryPanelProps {
+  profileId?: string;
   refreshSignal?: number;
 }
 
-export default function FieldHistoryPanel({ refreshSignal }: FieldHistoryPanelProps) {
+export default function FieldHistoryPanel({ profileId, refreshSignal }: FieldHistoryPanelProps) {
   const [history, setHistory] = useState<FieldHistoryEntry[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -25,7 +26,7 @@ export default function FieldHistoryPanel({ refreshSignal }: FieldHistoryPanelPr
       try {
         setLoading(true);
         setLoadError(null);
-        const result = await getMyFieldHistory();
+        const result = await getFieldHistory(profileId);
         if (!active) return;
         setHistory(result._embedded?.history ?? []);
       } catch (err) {
@@ -40,7 +41,7 @@ export default function FieldHistoryPanel({ refreshSignal }: FieldHistoryPanelPr
     return () => {
       active = false;
     };
-  }, [refreshSignal]);
+  }, [profileId, refreshSignal]);
 
   const isSearching = search.trim().length > 0;
 
@@ -101,7 +102,11 @@ export default function FieldHistoryPanel({ refreshSignal }: FieldHistoryPanelPr
       </div>
 
       {(history ?? []).length === 0 ? (
-        <p className="loading-text">No recorded changes yet — fields you edit will show up here.</p>
+        <p className="loading-text">
+          {profileId
+            ? 'No recorded changes visible to you for this person.'
+            : 'No recorded changes yet — fields you edit will show up here.'}
+        </p>
       ) : (
         <>
           <div className="field-list-overview">{history?.length ?? 0} recorded changes, newest first.</div>

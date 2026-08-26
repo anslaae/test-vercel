@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import type { LookupOption } from '../api/client';
 import '../styles.css';
-
-export interface LookupOption {
-  id: string;
-  label: string;
-  sublabel?: string;
-}
 
 interface LookupSelectProps {
   currentLabel?: string;
@@ -21,6 +16,9 @@ export default function LookupSelect({ currentLabel, onChange, search, placehold
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Bumped on every search kicked off; a response only gets applied if it's still the latest
+  // one requested, so a slow earlier search can't overwrite a faster, more recent one.
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     if (debounceRef.current) {
@@ -29,6 +27,7 @@ export default function LookupSelect({ currentLabel, onChange, search, placehold
 
     const term = query.trim();
     if (term.length < minLength) {
+      requestIdRef.current += 1;
       setOptions([]);
       setSearchError(null);
       setSearching(false);
@@ -36,12 +35,22 @@ export default function LookupSelect({ currentLabel, onChange, search, placehold
     }
 
     debounceRef.current = setTimeout(() => {
+      const requestId = ++requestIdRef.current;
       setSearching(true);
       setSearchError(null);
       search(term)
-        .then(setOptions)
-        .catch((err) => setSearchError(err instanceof Error ? err.message : 'Search failed'))
-        .finally(() => setSearching(false));
+        .then((results) => {
+          if (requestIdRef.current !== requestId) return;
+          setOptions(results);
+        })
+        .catch((err) => {
+          if (requestIdRef.current !== requestId) return;
+          setSearchError(err instanceof Error ? err.message : 'Search failed');
+        })
+        .finally(() => {
+          if (requestIdRef.current !== requestId) return;
+          setSearching(false);
+        });
     }, 350);
 
     return () => {
