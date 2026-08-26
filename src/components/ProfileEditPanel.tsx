@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { getEditableFields, getFieldValues, updateMyProfile, ApiError, UnauthorizedError } from '../api/client';
-import type { FieldDescriptor, FieldValue, FieldChange, FieldStatus, ProfileUpdateResult } from '../types/api';
+import type { FieldDescriptor, FieldValue, FieldStatus, FieldOutcome } from '../types/api';
 import '../styles.css';
 
 // First pass: single-valued fields with a plain-string wire format. MULTI_SELECT, PERSON,
 // MULTI_PERSON, ORGANIZATION, POSITION, MONEY and TEXT_MAP need their own lookup/entry UI
-// and are shown read-only for now.
+// and are listed read-only for now.
 const EDITABLE_TYPES = new Set<FieldDescriptor['type']>(['TEXT', 'NUMBER', 'DATE', 'BOOLEAN', 'SINGLE_SELECT']);
 
 const STATUS_LABEL: Record<FieldStatus, string> = {
@@ -26,6 +26,10 @@ function inputTypeFor(type: FieldDescriptor['type']) {
   return 'text';
 }
 
+function canEditInline(field: FieldDescriptor) {
+  return EDITABLE_TYPES.has(field.type) && field.editable;
+}
+
 interface ProfileEditPanelProps {
   onProfileUpdated?: () => void;
 }
@@ -35,31 +39,25 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
   const [values, setValues] = useState<Record<string, FieldValue>>({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [search, setSearch] = useState('');
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [draftValue, setDraftValue] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [result, setResult] = useState<ProfileUpdateResult | null>(null);
+  const [lastOutcomes, setLastOutcomes] = useState<Record<string, FieldOutcome>>({});
 
   const loadCatalog = async () => {
     try {
       setLoading(true);
       setLoadError(null);
       const [catalog, fieldValues] = await Promise.all([getEditableFields(), getFieldValues()]);
-      const catalogFields = catalog._embedded?.fields ?? [];
       const valuesByKey: Record<string, FieldValue> = {};
       for (const value of fieldValues._embedded?.values ?? []) {
         valuesByKey[value.key] = value;
       }
 
-      setFields(catalogFields);
+      setFields(catalog._embedded?.fields ?? []);
       setValues(valuesByKey);
-      setDrafts(
-        Object.fromEntries(
-          catalogFields
-            .filter((field) => EDITABLE_TYPES.has(field.type))
-            .map((field) => [field.key, valuesByKey[field.key]?.value ?? ''])
-        )
-      );
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Failed to load editable fields');
     } finally {
@@ -71,37 +69,43 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
     void loadCatalog();
   }, []);
 
-  const setDraft = (key: string, value: string) => {
-    setDrafts((current) => ({ ...current, [key]: value }));
-    setResult(null);
-  };
-
-  const dirtyKeys = useMemo(() => {
+  const filteredFields = useMemo(() => {
     if (!fields) return [];
-    return fields
-      .filter((field) => EDITABLE_TYPES.has(field.type) && field.editable)
-      .filter((field) => (drafts[field.key] ?? '') !== (values[field.key]?.value ?? ''))
-      .map((field) => field.key);
-  }, [fields, drafts, values]);
+    const term = search.trim().toLowerCase();
+    if (!term) return fields;
+    return fields.filter(
+      (field) => field.label.toLowerCase().includes(term) || field.key.toLowerCase().includes(term)
+    );
+  }, [fields, search]);
 
-  const resetDrafts = () => {
-    setDrafts(Object.fromEntries(Object.keys(drafts).map((key) => [key, values[key]?.value ?? ''])));
-    setResult(null);
+  const startEdit = (field: FieldDescriptor) => {
+    setEditingKey(field.key);
+    setDraftValue(values[field.key]?.value ?? '');
     setSubmitError(null);
   };
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (dirtyKeys.length === 0 || submitting) return;
+  const cancelEdit = () => {
+    setEditingKey(null);
+    setSubmitError(null);
+  };
 
-    const changes: FieldChange[] = dirtyKeys.map((key) => ({ key, value: drafts[key] }));
+  const saveField = async (field: FieldDescriptor) => {
+    const baseline = values[field.key]?.value ?? '';
+    if (draftValue === baseline || submitting) {
+      setEditingKey(null);
+      return;
+    }
 
     try {
       setSubmitting(true);
       setSubmitError(null);
-      const updateResult = await updateMyProfile(changes);
-      setResult(updateResult);
+      const updateResult = await updateMyProfile([{ key: field.key, value: draftValue }]);
+      const outcome = updateResult.fields.find((entry) => entry.key === field.key);
+      if (outcome) {
+        setLastOutcomes((current) => ({ ...current, [field.key]: outcome }));
+      }
       await loadCatalog();
+      setEditingKey(null);
       onProfileUpdated?.();
     } catch (err) {
       if (err instanceof UnauthorizedError) {
@@ -114,8 +118,6 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
       setSubmitting(false);
     }
   };
-
-  const labelFor = (key: string) => fields?.find((field) => field.key === key)?.label ?? key;
 
   if (loading) {
     return (
@@ -151,9 +153,6 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
     );
   }
 
-  const editableFields = (fields ?? []).filter((field) => EDITABLE_TYPES.has(field.type));
-  const readOnlyFields = (fields ?? []).filter((field) => !EDITABLE_TYPES.has(field.type));
-
   return (
     <div className="dashboard-card">
       <div className="card-header">
@@ -164,140 +163,126 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
         <span className="summary-badge">GET /profiles/fields · PATCH /profiles</span>
       </div>
 
-      {editableFields.length === 0 && readOnlyFields.length === 0 && (
+      {(fields ?? []).length === 0 ? (
         <p className="loading-text">You have no editable fields on this profile.</p>
-      )}
+      ) : (
+        <>
+          <input
+            type="search"
+            className="login-option-input field-search-input"
+            placeholder="Search fields by name..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            aria-label="Search fields"
+          />
+          <div className="field-list-count">
+            Showing {filteredFields.length} of {fields?.length ?? 0} fields. Each change is saved on its own —
+            click Edit, change the value, then Save.
+          </div>
 
-      {editableFields.length > 0 && (
-        <form className="profile-edit-form" onSubmit={handleSubmit}>
-          {editableFields.map((field) => {
-            const isDirty = dirtyKeys.includes(field.key);
-            const outcome = result?.fields.find((entry) => entry.key === field.key);
+          <div className="field-list">
+            {filteredFields.map((field) => {
+              const isEditing = editingKey === field.key;
+              const outcome = lastOutcomes[field.key];
+              const editable = canEditInline(field);
 
-            return (
-              <div key={field.key} className={`field-row${isDirty ? ' field-row-dirty' : ''}`}>
-                <label className="field-label" htmlFor={`field-${field.key}`}>
-                  {field.label}
-                  {field.mandatory && <span className="field-mandatory"> *</span>}
-                  {field.needsApproval && <span className="field-approval-hint"> (needs approval)</span>}
-                </label>
-                {field.description && <div className="field-description">{field.description}</div>}
-
-                {!field.editable ? (
-                  <div className="field-readonly">
-                    {values[field.key]?.displayValue ?? values[field.key]?.value ?? 'Not set'}
-                    {field.blockedReason && <div className="field-blocked-reason">{field.blockedReason}</div>}
+              return (
+                <div key={field.key} className={`field-list-row${isEditing ? ' field-list-row-editing' : ''}`}>
+                  <div className="field-list-main">
+                    <span className="field-list-label">
+                      {field.label}
+                      {field.mandatory && <span className="field-mandatory"> *</span>}
+                      {field.needsApproval && <span className="field-approval-hint"> (needs approval)</span>}
+                    </span>
+                    {!isEditing && (
+                      <span className="field-list-value">
+                        {values[field.key]?.displayValue ?? values[field.key]?.value ?? 'Not set'}
+                      </span>
+                    )}
                   </div>
-                ) : field.type === 'BOOLEAN' ? (
-                  <select
-                    id={`field-${field.key}`}
-                    className="login-option-input"
-                    value={drafts[field.key] ?? ''}
-                    onChange={(event) => setDraft(field.key, event.target.value)}
-                  >
-                    <option value="">Not set</option>
-                    <option value="true">Yes</option>
-                    <option value="false">No</option>
-                  </select>
-                ) : field.type === 'SINGLE_SELECT' ? (
-                  <select
-                    id={`field-${field.key}`}
-                    className="login-option-input"
-                    value={drafts[field.key] ?? ''}
-                    onChange={(event) => setDraft(field.key, event.target.value)}
-                  >
-                    <option value="">Not set</option>
-                    {field.options.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    id={`field-${field.key}`}
-                    className="login-option-input"
-                    type={inputTypeFor(field.type)}
-                    value={drafts[field.key] ?? ''}
-                    onChange={(event) => setDraft(field.key, event.target.value)}
-                  />
-                )}
 
-                {outcome && (
-                  <span className={`outcome-badge ${STATUS_CLASS[outcome.status]}`}>
-                    {STATUS_LABEL[outcome.status]}
-                    {outcome.effectiveFrom && ` · effective ${outcome.effectiveFrom}`}
-                  </span>
-                )}
-              </div>
-            );
-          })}
+                  {isEditing ? (
+                    <div className="field-edit-inline">
+                      {field.type === 'BOOLEAN' ? (
+                        <select
+                          className="login-option-input"
+                          value={draftValue}
+                          onChange={(event) => setDraftValue(event.target.value)}
+                          autoFocus
+                        >
+                          <option value="">Not set</option>
+                          <option value="true">Yes</option>
+                          <option value="false">No</option>
+                        </select>
+                      ) : field.type === 'SINGLE_SELECT' ? (
+                        <select
+                          className="login-option-input"
+                          value={draftValue}
+                          onChange={(event) => setDraftValue(event.target.value)}
+                          autoFocus
+                        >
+                          <option value="">Not set</option>
+                          {field.options.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          className="login-option-input"
+                          type={inputTypeFor(field.type)}
+                          value={draftValue}
+                          onChange={(event) => setDraftValue(event.target.value)}
+                          autoFocus
+                        />
+                      )}
+                      <button
+                        type="button"
+                        className="refresh-button field-list-save"
+                        onClick={() => void saveField(field)}
+                        disabled={submitting}
+                      >
+                        {submitting ? 'Saving...' : 'Save'}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button field-list-cancel"
+                        onClick={cancelEdit}
+                        disabled={submitting}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="field-list-actions">
+                      {outcome && (
+                        <span className={`outcome-badge ${STATUS_CLASS[outcome.status]}`}>
+                          {STATUS_LABEL[outcome.status]}
+                        </span>
+                      )}
+                      {editable ? (
+                        <button type="button" className="field-list-edit-btn" onClick={() => startEdit(field)}>
+                          Edit
+                        </button>
+                      ) : (
+                        <span className="field-list-note">
+                          {!EDITABLE_TYPES.has(field.type)
+                            ? `${field.type} not supported yet`
+                            : field.blockedReason || 'Not editable'}
+                        </span>
+                      )}
+                    </div>
+                  )}
 
-          <div className="profile-edit-actions">
-            <button
-              type="submit"
-              className="refresh-button"
-              disabled={dirtyKeys.length === 0 || submitting}
-            >
-              {submitting ? 'Saving...' : `Save changes${dirtyKeys.length > 0 ? ` (${dirtyKeys.length})` : ''}`}
-            </button>
-            <button
-              type="button"
-              className="secondary-button profile-edit-reset"
-              onClick={resetDrafts}
-              disabled={dirtyKeys.length === 0 || submitting}
-            >
-              Discard changes
-            </button>
+                  {isEditing && submitError && (
+                    <div className="field-edit-error">{submitError}</div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-
-          {submitError && (
-            <div className="api-error-banner api-error-inline">
-              <div className="api-error-icon">⚠️</div>
-              <div className="api-error-body">
-                <div className="api-error-title">Update failed</div>
-                <div className="api-error-message">{submitError}</div>
-              </div>
-            </div>
-          )}
-
-          {result && (
-            <div className={`profile-edit-outcome outcome-banner-${STATUS_CLASS[result.outcome]}`}>
-              Overall outcome: <strong>{STATUS_LABEL[result.outcome]}</strong>
-              {result.fields.length > 0 && (
-                <ul className="profile-edit-outcome-list">
-                  {result.fields.map((entry) => (
-                    <li key={entry.key}>
-                      {labelFor(entry.key)}: {STATUS_LABEL[entry.status]}
-                      {entry.changeId && ` (${entry.changeId})`}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-        </form>
-      )}
-
-      {readOnlyFields.length > 0 && (
-        <details className="raw-data-section">
-          <summary className="raw-data-summary">
-            <h3 className="section-heading">Other editable fields (not yet supported in this demo)</h3>
-            <span className="summary-badge">{readOnlyFields.length} fields</span>
-          </summary>
-          <div className="kv-list">
-            {readOnlyFields.map((field) => (
-              <div key={field.key} className="kv-row">
-                <span className="kv-key">
-                  {field.label} <span className="field-type-tag">{field.type}</span>
-                </span>
-                <span className="kv-value">
-                  {values[field.key]?.displayValue ?? values[field.key]?.value ?? 'Not set'}
-                </span>
-              </div>
-            ))}
-          </div>
-        </details>
+        </>
       )}
     </div>
   );
