@@ -16,6 +16,7 @@ import AppInfoModal from '../components/AppInfoModal';
 import ProfileEditPanel from '../components/ProfileEditPanel';
 import OutstandingChangesPanel from '../components/OutstandingChangesPanel';
 import FieldHistoryPanel from '../components/FieldHistoryPanel';
+import Tabs from '../components/Tabs';
 import '../styles.css';
 
 const EMBED_OPTIONS: Array<{ key: ProfileEmbedKey; label: string }> = [
@@ -707,6 +708,190 @@ export default function Dashboard() {
         );
     };
 
+    const overviewTabContent = (
+            <div className="dashboard-card">
+                <div className="card-header">
+                    <h2 className="card-title">
+                        {photoUrl ? (
+                            <img src={photoUrl} alt="Profile" className="card-avatar-image"/>
+                        ) : (
+                            <span className="card-icon">👤</span>
+                        )}
+                        Your Personal Information
+                    </h2>
+                    <div className="card-header-actions">
+                        <button
+                            onClick={toggleDebugMode}
+                            className={`status-badge debug-mode-toggle ${debuggerEnabled ? 'debugger-on' : 'debugger-off'}`}
+                            title={debuggerEnabled
+                                ? "Debug Mode is ON: Refresh buttons show step-by-step explanation dialogs. Click to switch to Fast Mode."
+                                : "Debug Mode is OFF: Refresh buttons execute instantly without dialogs. Click to switch to Debug Mode."}
+                        >
+                            {debuggerEnabled ? '🔍 Debug Mode: Enabled' : '⚡ Debug Mode: Disabled'}
+                        </button>
+                    </div>
+                </div>
+
+                <div className="card-content">
+                    <div className="card-layout-grid">
+                        <div className="user-data-container">
+                            {userInfoError ? (
+                                <div className="api-error-banner api-error-inline">
+                                    <div className="api-error-icon">⚠️</div>
+                                    <div className="api-error-body">
+                                        <div className="api-error-title">
+                                            Personal details API failed
+                                            {userInfoError.status && (
+                                                <span className="api-error-status">HTTP {userInfoError.status}</span>
+                                            )}
+                                        </div>
+                                        <div className="api-error-endpoint">
+                                            <code>GET {userInfoError.endpoint}</code>
+                                        </div>
+                                        <div className="api-error-message">{userInfoError.message}</div>
+                                    </div>
+                                </div>
+                            ) : (
+                                renderUserInfoGrid()
+                            )}
+                        </div>
+
+                        <div className="data-controls-panel">
+                            <div className="data-controls-section">
+                                <h4 className="data-controls-title">Data Refresh</h4>
+                                <button
+                                    onClick={handleRefreshUserData}
+                                    disabled={refreshingUserData}
+                                    className="refresh-button"
+                                    title="Request personal data from API: Browser sends session cookie, BFF attaches access token, calls protected API endpoint. BFF auto-refreshes token if expired."
+                                >
+                                    <span className={`refresh-icon ${refreshingUserData ? 'spinning' : ''}`}>🔄</span>
+                                    Refresh Personal Data
+                                </button>
+                            </div>
+
+                            <div className="data-controls-section">
+                                <div className="embed-controls">
+                                    <div className="embed-controls-heading">Embedded resources to request</div>
+                                    <div className="embed-controls-options">
+                                        {EMBED_OPTIONS.map((option) => (
+                                            <label key={option.key} className="embed-option">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedEmbeds.includes(option.key)}
+                                                    onChange={() => toggleEmbed(option.key)}
+                                                />
+                                                <span>{option.label}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <div className="embed-controls-meta">Next refresh request: <code>{selectedProfileEndpointWithEmbeds}</code></div>
+                                    {hasPendingEmbedChanges && (
+                                        <div className="embed-controls-pending">Pending changes - click Refresh Personal Data to apply</div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {renderUserRawDataSections()}
+
+                    {customState && (
+                        <div className="custom-state-banner">
+                            <div className="custom-state-icon">🔄</div>
+                            <div className="custom-state-body">
+                                <div className="custom-state-label">App context payload returned successfully</div>
+                                <div className="custom-state-value">{customState}</div>
+                                <div className="custom-state-hint">
+                                    This is your app-specific context value. It was wrapped inside the OAuth
+                                    <code>state</code> token (used for CSRF/correlation) and returned after
+                                    successful authentication.
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+    );
+
+    const sessionTabContent = (
+            <div className="dashboard-card session-details-card">
+                <div className="card-header">
+                    <h2 className="card-title">
+                        <span className="card-icon">🔐</span>
+                        Session & Technical Details
+                    </h2>
+                </div>
+
+                <div className="card-content">
+                    <details className="token-details">
+                        <summary className="token-summary">
+                            <h3 className="session-title">Session and Token Information</h3>
+                            <span className="summary-badge">4 sections</span>
+                        </summary>
+                        {renderSessionData()}
+                        <div className="technical-section">
+                            <button
+                                type="button"
+                                onClick={handleRefreshSessionData}
+                                disabled={refreshingSessionData || !sessionDetails?.session.hasRefreshToken}
+                                className="learn-more-link-section token-refresh-button"
+                                title={
+                                    !sessionDetails?.session.hasRefreshToken
+                                        ? 'No refresh token available for this session'
+                                        : 'Exchange refresh token for new access token: Browser sends session cookie with refresh token, BFF calls authorization server to obtain fresh tokens, new tokens stored server-side.'
+                                }
+                            >
+                                <span
+                                    className={`section-learn-icon refresh-icon ${refreshingSessionData ? 'spinning' : ''}`}>🔄</span>
+                                <span>Refresh Tokens in BFF</span>
+                            </button>
+                        </div>
+                    </details>
+
+                    <div className="technical-section">
+                        <button
+                            type="button"
+                            className="learn-more-link-section"
+                            onClick={() => setShowAppInfo(true)}
+                        >
+                            <span className="section-learn-icon">ℹ️</span>
+                            <span>Learn how this demo works</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+    );
+
+    const tabs = [
+        {id: 'overview', label: 'Overview', icon: '👤', content: overviewTabContent},
+        {
+            id: 'edit',
+            label: 'Edit Profile',
+            icon: '✏️',
+            content: (
+                <ProfileEditPanel
+                    onProfileUpdated={() => {
+                        void runRefreshUserData();
+                        setChangesVersion((current) => current + 1);
+                    }}
+                />
+            )
+        },
+        {
+            id: 'changes',
+            label: 'Changes & History',
+            icon: '⏳',
+            content: (
+                <>
+                    <OutstandingChangesPanel refreshSignal={changesVersion}/>
+                    <FieldHistoryPanel refreshSignal={changesVersion}/>
+                </>
+            )
+        },
+        {id: 'session', label: 'Session', icon: '🔐', content: sessionTabContent}
+    ];
+
     return (
         <div className="dashboard-container">
             {showStep3Dialog && (
@@ -813,167 +998,7 @@ export default function Dashboard() {
                 </button>
             </div>
 
-            <div className="dashboard-card">
-                <div className="card-header">
-                    <h2 className="card-title">
-                        {photoUrl ? (
-                            <img src={photoUrl} alt="Profile" className="card-avatar-image"/>
-                        ) : (
-                            <span className="card-icon">👤</span>
-                        )}
-                        Your Personal Information
-                    </h2>
-                    <div className="card-header-actions">
-                        <button
-                            onClick={toggleDebugMode}
-                            className={`status-badge debug-mode-toggle ${debuggerEnabled ? 'debugger-on' : 'debugger-off'}`}
-                            title={debuggerEnabled
-                                ? "Debug Mode is ON: Refresh buttons show step-by-step explanation dialogs. Click to switch to Fast Mode."
-                                : "Debug Mode is OFF: Refresh buttons execute instantly without dialogs. Click to switch to Debug Mode."}
-                        >
-                            {debuggerEnabled ? '🔍 Debug Mode: Enabled' : '⚡ Debug Mode: Disabled'}
-                        </button>
-                    </div>
-                </div>
-
-                <div className="card-content">
-                    <div className="card-layout-grid">
-                        <div className="user-data-container">
-                            {userInfoError ? (
-                                <div className="api-error-banner api-error-inline">
-                                    <div className="api-error-icon">⚠️</div>
-                                    <div className="api-error-body">
-                                        <div className="api-error-title">
-                                            Personal details API failed
-                                            {userInfoError.status && (
-                                                <span className="api-error-status">HTTP {userInfoError.status}</span>
-                                            )}
-                                        </div>
-                                        <div className="api-error-endpoint">
-                                            <code>GET {userInfoError.endpoint}</code>
-                                        </div>
-                                        <div className="api-error-message">{userInfoError.message}</div>
-                                    </div>
-                                </div>
-                            ) : (
-                                renderUserInfoGrid()
-                            )}
-                        </div>
-
-                        <div className="data-controls-panel">
-                            <div className="data-controls-section">
-                                <h4 className="data-controls-title">Data Refresh</h4>
-                                <button
-                                    onClick={handleRefreshUserData}
-                                    disabled={refreshingUserData}
-                                    className="refresh-button"
-                                    title="Request personal data from API: Browser sends session cookie, BFF attaches access token, calls protected API endpoint. BFF auto-refreshes token if expired."
-                                >
-                                    <span className={`refresh-icon ${refreshingUserData ? 'spinning' : ''}`}>🔄</span>
-                                    Refresh Personal Data
-                                </button>
-                            </div>
-
-                            <div className="data-controls-section">
-                                <div className="embed-controls">
-                                    <div className="embed-controls-heading">Embedded resources to request</div>
-                                    <div className="embed-controls-options">
-                                        {EMBED_OPTIONS.map((option) => (
-                                            <label key={option.key} className="embed-option">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedEmbeds.includes(option.key)}
-                                                    onChange={() => toggleEmbed(option.key)}
-                                                />
-                                                <span>{option.label}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                    <div className="embed-controls-meta">Next refresh request: <code>{selectedProfileEndpointWithEmbeds}</code></div>
-                                    {hasPendingEmbedChanges && (
-                                        <div className="embed-controls-pending">Pending changes - click Refresh Personal Data to apply</div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {renderUserRawDataSections()}
-
-                    {customState && (
-                        <div className="custom-state-banner">
-                            <div className="custom-state-icon">🔄</div>
-                            <div className="custom-state-body">
-                                <div className="custom-state-label">App context payload returned successfully</div>
-                                <div className="custom-state-value">{customState}</div>
-                                <div className="custom-state-hint">
-                                    This is your app-specific context value. It was wrapped inside the OAuth
-                                    <code>state</code> token (used for CSRF/correlation) and returned after
-                                    successful authentication.
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            <ProfileEditPanel
-                onProfileUpdated={() => {
-                    void runRefreshUserData();
-                    setChangesVersion((current) => current + 1);
-                }}
-            />
-
-            <OutstandingChangesPanel refreshSignal={changesVersion} />
-
-            <FieldHistoryPanel refreshSignal={changesVersion} />
-
-            <div className="dashboard-card session-details-card">
-                <div className="card-header">
-                    <h2 className="card-title">
-                        <span className="card-icon">🔐</span>
-                        Session & Technical Details
-                    </h2>
-                </div>
-
-                <div className="card-content">
-                    <details className="token-details">
-                        <summary className="token-summary">
-                            <h3 className="session-title">Session and Token Information</h3>
-                            <span className="summary-badge">4 sections</span>
-                        </summary>
-                        {renderSessionData()}
-                        <div className="technical-section">
-                            <button
-                                type="button"
-                                onClick={handleRefreshSessionData}
-                                disabled={refreshingSessionData || !sessionDetails?.session.hasRefreshToken}
-                                className="learn-more-link-section token-refresh-button"
-                                title={
-                                    !sessionDetails?.session.hasRefreshToken
-                                        ? 'No refresh token available for this session'
-                                        : 'Exchange refresh token for new access token: Browser sends session cookie with refresh token, BFF calls authorization server to obtain fresh tokens, new tokens stored server-side.'
-                                }
-                            >
-                                <span
-                                    className={`section-learn-icon refresh-icon ${refreshingSessionData ? 'spinning' : ''}`}>🔄</span>
-                                <span>Refresh Tokens in BFF</span>
-                            </button>
-                        </div>
-                    </details>
-
-                    <div className="technical-section">
-                        <button
-                            type="button"
-                            className="learn-more-link-section"
-                            onClick={() => setShowAppInfo(true)}
-                        >
-                            <span className="section-learn-icon">ℹ️</span>
-                            <span>Learn how this demo works</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
+            <Tabs tabs={tabs} />
 
             <div className="dashboard-footer">
                 <p className="footer-text">

@@ -3,6 +3,10 @@ import { getMyFieldHistory } from '../api/client';
 import type { FieldHistoryEntry } from '../types/api';
 import '../styles.css';
 
+// The history list can run long on a long-serving employee -- keep only the most recent
+// entries visible by default. Search or "Show all" reveals the rest.
+const PREVIEW_COUNT = 6;
+
 interface FieldHistoryPanelProps {
   refreshSignal?: number;
 }
@@ -12,6 +16,7 @@ export default function FieldHistoryPanel({ refreshSignal }: FieldHistoryPanelPr
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -37,6 +42,8 @@ export default function FieldHistoryPanel({ refreshSignal }: FieldHistoryPanelPr
     };
   }, [refreshSignal]);
 
+  const isSearching = search.trim().length > 0;
+
   const filteredHistory = useMemo(() => {
     if (!history) return [];
     const term = search.trim().toLowerCase();
@@ -45,6 +52,9 @@ export default function FieldHistoryPanel({ refreshSignal }: FieldHistoryPanelPr
       (entry) => (entry.label ?? entry.key).toLowerCase().includes(term) || entry.key.toLowerCase().includes(term)
     );
   }, [history, search]);
+
+  const visibleHistory = isSearching || expanded ? filteredHistory : filteredHistory.slice(0, PREVIEW_COUNT);
+  const hasMoreToShow = !isSearching && !expanded && filteredHistory.length > PREVIEW_COUNT;
 
   if (loading) {
     return (
@@ -94,20 +104,27 @@ export default function FieldHistoryPanel({ refreshSignal }: FieldHistoryPanelPr
         <p className="loading-text">No recorded changes yet — fields you edit will show up here.</p>
       ) : (
         <>
+          <div className="field-list-overview">{history?.length ?? 0} recorded changes, newest first.</div>
+
           <input
             type="search"
             className="login-option-input field-search-input"
             placeholder="Search history by field name..."
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setExpanded(false);
+            }}
             aria-label="Search field history"
           />
           <div className="field-list-count">
-            Showing {filteredHistory.length} of {history?.length ?? 0} recorded changes, newest first.
+            {isSearching
+              ? `${filteredHistory.length} match${filteredHistory.length === 1 ? '' : 'es'} for "${search.trim()}"`
+              : `Showing ${visibleHistory.length} of ${filteredHistory.length} changes`}
           </div>
 
           <div className="field-list">
-            {filteredHistory.map((entry, index) => {
+            {visibleHistory.map((entry, index) => {
               const fromValue = entry.previousDisplayValue ?? entry.previousValue;
               const toValue = entry.displayValue ?? entry.value ?? 'Not set';
 
@@ -130,6 +147,17 @@ export default function FieldHistoryPanel({ refreshSignal }: FieldHistoryPanelPr
               );
             })}
           </div>
+
+          {hasMoreToShow && (
+            <button type="button" className="field-list-show-more" onClick={() => setExpanded(true)}>
+              Show all {filteredHistory.length} changes
+            </button>
+          )}
+          {expanded && !isSearching && (
+            <button type="button" className="field-list-show-more" onClick={() => setExpanded(false)}>
+              Show fewer changes
+            </button>
+          )}
         </>
       )}
     </div>

@@ -1338,9 +1338,88 @@ body {
   margin-top: 1rem;
 }
 
+/* ── Tabs ──────────────────────────────────────────────────────── */
+.tabs-container {
+  margin-bottom: 2rem;
+}
+
+.tabs-bar {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.4rem;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(10px);
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.tabs-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 0.65rem 1.1rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+}
+
+.tabs-tab:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+}
+
+.tabs-tab-active {
+  background: var(--bg-white);
+  color: var(--primary-color);
+  box-shadow: var(--shadow);
+}
+
+.tabs-tab-active:hover {
+  background: var(--bg-white);
+  color: var(--primary-color);
+}
+
+.tabs-tab-icon {
+  font-size: 1rem;
+}
+
 /* ── Profile Edit Panel ────────────────────────────────────────── */
+.field-list-overview {
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
 .field-search-input {
   margin-bottom: 0.5rem;
+}
+
+.field-list-show-more {
+  appearance: none;
+  border: 1px dashed var(--border-color);
+  background: transparent;
+  color: var(--primary-color);
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 0.6rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  width: 100%;
+  margin-top: 0.75rem;
+  transition: all 0.2s ease;
+}
+
+.field-list-show-more:hover {
+  background: var(--primary-light);
+  border-color: var(--primary-color);
 }
 
 .field-list-count {

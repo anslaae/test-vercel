@@ -30,6 +30,10 @@ function canEditInline(field: FieldDescriptor) {
   return EDITABLE_TYPES.has(field.type) && field.editable;
 }
 
+// Keep the default view short -- the full catalog can run into dozens of fields. Search or
+// "Show all" reveals the rest.
+const PREVIEW_COUNT = 6;
+
 interface ProfileEditPanelProps {
   onProfileUpdated?: () => void;
 }
@@ -40,6 +44,7 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [draftValue, setDraftValue] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -69,6 +74,8 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
     void loadCatalog();
   }, []);
 
+  const isSearching = search.trim().length > 0;
+
   const filteredFields = useMemo(() => {
     if (!fields) return [];
     const term = search.trim().toLowerCase();
@@ -77,6 +84,10 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
       (field) => field.label.toLowerCase().includes(term) || field.key.toLowerCase().includes(term)
     );
   }, [fields, search]);
+
+  const visibleFields = isSearching || expanded ? filteredFields : filteredFields.slice(0, PREVIEW_COUNT);
+  const hasMoreToShow = !isSearching && !expanded && filteredFields.length > PREVIEW_COUNT;
+  const editableCount = (fields ?? []).filter(canEditInline).length;
 
   const startEdit = (field: FieldDescriptor) => {
     setEditingKey(field.key);
@@ -167,21 +178,30 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
         <p className="loading-text">You have no editable fields on this profile.</p>
       ) : (
         <>
+          <div className="field-list-overview">
+            {fields?.length ?? 0} fields total · {editableCount} editable now. Each change is saved on its own —
+            click Edit, change the value, then Save.
+          </div>
+
           <input
             type="search"
             className="login-option-input field-search-input"
             placeholder="Search fields by name..."
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setExpanded(false);
+            }}
             aria-label="Search fields"
           />
           <div className="field-list-count">
-            Showing {filteredFields.length} of {fields?.length ?? 0} fields. Each change is saved on its own —
-            click Edit, change the value, then Save.
+            {isSearching
+              ? `${filteredFields.length} match${filteredFields.length === 1 ? '' : 'es'} for "${search.trim()}"`
+              : `Showing ${visibleFields.length} of ${filteredFields.length} fields`}
           </div>
 
           <div className="field-list">
-            {filteredFields.map((field) => {
+            {visibleFields.map((field) => {
               const isEditing = editingKey === field.key;
               const outcome = lastOutcomes[field.key];
               const editable = canEditInline(field);
@@ -282,6 +302,17 @@ export default function ProfileEditPanel({ onProfileUpdated }: ProfileEditPanelP
               );
             })}
           </div>
+
+          {hasMoreToShow && (
+            <button type="button" className="field-list-show-more" onClick={() => setExpanded(true)}>
+              Show all {filteredFields.length} fields
+            </button>
+          )}
+          {expanded && !isSearching && (
+            <button type="button" className="field-list-show-more" onClick={() => setExpanded(false)}>
+              Show fewer fields
+            </button>
+          )}
         </>
       )}
     </div>
