@@ -72,6 +72,93 @@ export interface ProfileResponse {
   };
 }
 
+export type FieldType =
+  | 'TEXT'
+  | 'NUMBER'
+  | 'DATE'
+  | 'BOOLEAN'
+  | 'SINGLE_SELECT'
+  | 'MULTI_SELECT'
+  | 'PERSON'
+  | 'MULTI_PERSON'
+  | 'ORGANIZATION'
+  | 'POSITION'
+  | 'MONEY'
+  | 'TEXT_MAP'
+  | 'OTHER';
+
+export interface FieldOption {
+  value: string;
+  label: string;
+}
+
+export interface FieldDescriptor {
+  key: string;
+  label: string;
+  description?: string;
+  type: FieldType;
+  editable: boolean;
+  blockedReason?: string;
+  mandatory: boolean;
+  needsApproval: boolean;
+  options: FieldOption[];
+}
+
+export interface FieldCatalog {
+  _embedded?: {
+    fields: FieldDescriptor[];
+  };
+  _links?: {
+    self?: HalLink;
+  };
+}
+
+export interface FieldValue {
+  key: string;
+  label: string;
+  type: FieldType;
+  value?: string;
+  values?: string[];
+  entries?: Record<string, string>;
+  displayValue?: string;
+}
+
+export interface FieldValues {
+  _embedded?: {
+    values: FieldValue[];
+  };
+  _links?: {
+    self?: HalLink;
+  };
+}
+
+export interface FieldChange {
+  key: string;
+  value?: string | null;
+  values?: string[];
+  entries?: Record<string, string>;
+  effectiveFrom?: string;
+}
+
+export type FieldStatus = 'APPLIED' | 'PENDING_APPROVAL' | 'SCHEDULED';
+
+export interface FieldOutcome {
+  key: string;
+  status: FieldStatus;
+  approver?: unknown;
+  effectiveFrom?: string;
+  changeId?: string;
+}
+
+export interface ProfileUpdateResult {
+  outcome: FieldStatus;
+  fields: FieldOutcome[];
+  _links?: {
+    self?: HalLink;
+    changes?: HalLink;
+  };
+}
+
 export interface TokenSummary {
   present: boolean;
   format: 'jwt' | 'opaque';

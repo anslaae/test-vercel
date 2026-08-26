@@ -1338,6 +1338,121 @@ body {
   margin-top: 1rem;
 }
 
+/* ── Profile Edit Panel ────────────────────────────────────────── */
+.profile-edit-form {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.field-row {
+  display: grid;
+  gap: 0.4rem;
+  padding: 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+  background: var(--bg-light);
+  transition: border-color 0.2s ease;
+}
+
+.field-row-dirty {
+  border-color: var(--primary-color);
+  background: var(--primary-light);
+}
+
+.field-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.field-mandatory {
+  color: var(--error-color);
+}
+
+.field-approval-hint {
+  font-weight: 400;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.field-description {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.field-readonly {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.field-blocked-reason {
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.field-type-tag {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.profile-edit-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.profile-edit-reset {
+  width: auto;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+}
+
+.outcome-badge {
+  justify-self: start;
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.outcome-badge-applied {
+  background: var(--success-light);
+  color: var(--success-color);
+}
+
+.outcome-badge-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.outcome-badge-scheduled {
+  background: #ede9fe;
+  color: #7c3aed;
+}
+
+.profile-edit-outcome {
+  padding: 1rem;
+  border-radius: var(--radius);
+  background: var(--bg-light);
+  border: 1px solid var(--border-color);
+  font-size: 0.9rem;
+}
+
+.profile-edit-outcome-list {
+  margin-top: 0.5rem;
+  padding-left: 1.15rem;
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .login-card {

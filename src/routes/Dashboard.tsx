@@ -13,6 +13,7 @@ import useAuth from '../auth/useAuth';
 import type {ProfileResponse, SessionDetails} from '../types/api';
 import FlowDebugDialog from '../components/FlowDebugDialog';
 import AppInfoModal from '../components/AppInfoModal';
+import ProfileEditPanel from '../components/ProfileEditPanel';
 import '../styles.css';
 
 const EMBED_OPTIONS: Array<{ key: ProfileEmbedKey; label: string }> = [
@@ -908,6 +909,8 @@ export default function Dashboard() {
                     )}
                 </div>
             </div>
+
+            <ProfileEditPanel onProfileUpdated={() => { void runRefreshUserData(); }} />
 
             <div className="dashboard-card session-details-card">
                 <div className="card-header">

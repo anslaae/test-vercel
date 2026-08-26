@@ -1,4 +1,4 @@
-import type { ProfileResponse, SessionDetails } from '../types/api';
+import type { FieldCatalog, FieldChange, FieldValues, ProfileResponse, ProfileUpdateResult, SessionDetails } from '../types/api';
 
 const API_BASE = '/api';
 
@@ -16,10 +16,20 @@ export class UnauthorizedError extends Error {
 export class ApiError extends Error {
   constructor(
     public readonly endpoint: string,
-    public readonly status: number
+    public readonly status: number,
+    public readonly detail?: string
   ) {
     super(`Request failed with status ${status}`);
     this.name = 'ApiError';
+  }
+}
+
+async function extractProblemDetail(response: Response) {
+  try {
+    const body = await response.clone().json();
+    return typeof body?.detail === 'string' ? body.detail : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -38,7 +48,7 @@ async function request(path: string, init?: RequestInit) {
   }
 
   if (!response.ok) {
-    throw new ApiError(path, response.status);
+    throw new ApiError(path, response.status, await extractProblemDetail(response));
   }
 
   return response;
@@ -91,6 +101,36 @@ export async function getProfilePhotoContent(profileId: string) {
   }
 
   return response.blob();
+}
+
+export async function getEditableFields() {
+  const response = await request('/profiles/fields', {
+    headers: {
+      Accept: 'application/hal+json, application/json'
+    }
+  });
+  return response.json() as Promise<FieldCatalog>;
+}
+
+export async function getFieldValues() {
+  const response = await request('/profiles/values', {
+    headers: {
+      Accept: 'application/hal+json, application/json'
+    }
+  });
+  return response.json() as Promise<FieldValues>;
+}
+
+export async function updateMyProfile(fields: FieldChange[]) {
+  const response = await request('/profiles', {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/hal+json, application/json'
+    },
+    body: JSON.stringify({ fields })
+  });
+  return response.json() as Promise<ProfileUpdateResult>;
 }
 
 export async function getSessionDetails() {
