@@ -1,4 +1,4 @@
-import type { FieldCatalog, FieldChange, FieldValues, ProfileResponse, ProfileUpdateResult, SessionDetails } from '../types/api';
+import type { ChangeCollection, FieldCatalog, FieldChange, FieldValues, ProfileResponse, ProfileUpdateResult, SessionDetails } from '../types/api';
 
 const API_BASE = '/api';
 
@@ -131,6 +131,19 @@ export async function updateMyProfile(fields: FieldChange[]) {
     body: JSON.stringify({ fields })
   });
   return response.json() as Promise<ProfileUpdateResult>;
+}
+
+export async function getMyChanges() {
+  const response = await request('/profiles/changes', {
+    headers: {
+      Accept: 'application/hal+json, application/json'
+    }
+  });
+  return response.json() as Promise<ChangeCollection>;
+}
+
+export async function cancelMyChange(changeId: string) {
+  await request(`/profiles/changes/${encodeURIComponent(changeId)}`, { method: 'DELETE' });
 }
 
 export async function getSessionDetails() {

@@ -159,6 +159,31 @@ export interface ProfileUpdateResult {
   };
 }
 
+export type ChangeKind = 'PENDING_APPROVAL' | 'SCHEDULED';
+
+export interface PendingChange {
+  id: string;
+  key: string;
+  label?: string;
+  kind: ChangeKind;
+  value?: string;
+  displayValue?: string;
+  effectiveFrom?: string;
+  requestedOn?: string;
+  _links?: {
+    self?: HalLink;
+  };
+}
+
+export interface ChangeCollection {
+  _embedded?: {
+    changes: PendingChange[];
+  };
+  _links?: {
+    self?: HalLink;
+  };
+}
+
 export interface TokenSummary {
   present: boolean;
   format: 'jwt' | 'opaque';

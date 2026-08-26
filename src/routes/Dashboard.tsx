@@ -14,6 +14,7 @@ import type {ProfileResponse, SessionDetails} from '../types/api';
 import FlowDebugDialog from '../components/FlowDebugDialog';
 import AppInfoModal from '../components/AppInfoModal';
 import ProfileEditPanel from '../components/ProfileEditPanel';
+import OutstandingChangesPanel from '../components/OutstandingChangesPanel';
 import '../styles.css';
 
 const EMBED_OPTIONS: Array<{ key: ProfileEmbedKey; label: string }> = [
@@ -65,6 +66,7 @@ export default function Dashboard() {
     const appliedEmbedSignature = [...appliedEmbeds].sort().join(',');
     const hasPendingEmbedChanges = selectedEmbedSignature !== appliedEmbedSignature;
     const [userInfo, setUserInfo] = useState<ProfileResponse | null>(null);
+    const [changesVersion, setChangesVersion] = useState(0);
     const [userInfoError, setUserInfoError] = useState<{message: string; endpoint: string; status?: number} | null>(null);
     const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
     const [loading, setLoading] = useState(
@@ -914,7 +916,14 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            <ProfileEditPanel onProfileUpdated={() => { void runRefreshUserData(); }} />
+            <ProfileEditPanel
+                onProfileUpdated={() => {
+                    void runRefreshUserData();
+                    setChangesVersion((current) => current + 1);
+                }}
+            />
+
+            <OutstandingChangesPanel refreshSignal={changesVersion} />
 
             <div className="dashboard-card session-details-card">
                 <div className="card-header">

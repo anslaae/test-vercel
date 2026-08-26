@@ -1433,6 +1433,34 @@ body {
   color: white;
 }
 
+.field-list-withdraw-btn {
+  appearance: none;
+  border: 1px solid var(--error-color);
+  background: var(--bg-white);
+  color: var(--error-color);
+  font-weight: 600;
+  font-size: 0.82rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.field-list-withdraw-btn:hover:not(:disabled) {
+  background: var(--error-color);
+  color: white;
+}
+
+.field-list-withdraw-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.field-list-error {
+  margin-top: 1rem;
+  margin-bottom: 0;
+}
+
 .field-edit-inline {
   display: flex;
   align-items: center;
