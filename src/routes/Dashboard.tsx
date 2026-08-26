@@ -209,22 +209,26 @@ export default function Dashboard() {
                     });
                 }
 
-                // Photo is always non-blocking
-                try {
-                    const photoBlob = await getProfilePhotoContent();
-                    if (!active) return;
-                    setPhotoUrl((current) => {
-                        if (current) URL.revokeObjectURL(current);
-                        return photoBlob ? URL.createObjectURL(photoBlob) : null;
-                    });
-                } catch (photoError) {
-                    if (!active) return;
-                    if (photoError instanceof UnauthorizedError) return;
-                    console.warn('[Dashboard] Failed to load profile photo:', photoError);
-                    setPhotoUrl((current) => {
-                        if (current) URL.revokeObjectURL(current);
-                        return null;
-                    });
+                // Photo is always non-blocking. The Profile API has no self-service photo
+                // shorthand — even the caller's own photo is addressed by profileId.
+                const profileId = userResult.status === 'fulfilled' ? userResult.value.profileId : null;
+                if (profileId) {
+                    try {
+                        const photoBlob = await getProfilePhotoContent(profileId);
+                        if (!active) return;
+                        setPhotoUrl((current) => {
+                            if (current) URL.revokeObjectURL(current);
+                            return photoBlob ? URL.createObjectURL(photoBlob) : null;
+                        });
+                    } catch (photoError) {
+                        if (!active) return;
+                        if (photoError instanceof UnauthorizedError) return;
+                        console.warn('[Dashboard] Failed to load profile photo:', photoError);
+                        setPhotoUrl((current) => {
+                            if (current) URL.revokeObjectURL(current);
+                            return null;
+                        });
+                    }
                 }
             } catch (err) {
                 if (!active) return;
@@ -296,28 +300,30 @@ export default function Dashboard() {
             const userData = await getProfile(requestEmbeds);
             setUserInfo(userData);
 
-            try {
-                const photoBlob = await getProfilePhotoContent();
-                setPhotoUrl((current) => {
-                    if (current) {
-                        URL.revokeObjectURL(current);
+            if (userData.profileId) {
+                try {
+                    const photoBlob = await getProfilePhotoContent(userData.profileId);
+                    setPhotoUrl((current) => {
+                        if (current) {
+                            URL.revokeObjectURL(current);
+                        }
+
+                        return photoBlob ? URL.createObjectURL(photoBlob) : null;
+                    });
+                } catch (photoError) {
+                    if (photoError instanceof UnauthorizedError) {
+                        await refreshSession();
+                        return;
                     }
 
-                    return photoBlob ? URL.createObjectURL(photoBlob) : null;
-                });
-            } catch (photoError) {
-                if (photoError instanceof UnauthorizedError) {
-                    await refreshSession();
-                    return;
+                    console.warn('[Dashboard] Failed to refresh profile photo:', photoError);
+                    setPhotoUrl((current) => {
+                        if (current) {
+                            URL.revokeObjectURL(current);
+                        }
+                        return null;
+                    });
                 }
-
-                console.warn('[Dashboard] Failed to refresh profile photo:', photoError);
-                setPhotoUrl((current) => {
-                    if (current) {
-                        URL.revokeObjectURL(current);
-                    }
-                    return null;
-                });
             }
 
              if (debuggerEnabled) {

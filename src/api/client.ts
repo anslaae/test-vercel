@@ -66,8 +66,10 @@ export async function getProfileById(profileId: string, embeds: ProfileEmbedKey[
   return response.json() as Promise<ProfileResponse>;
 }
 
-export async function getProfilePhotoContent(profileId?: string) {
-  const path = profileId ? `/profiles/${encodeURIComponent(profileId)}/photo/content` : '/profiles/photo/content';
+export async function getProfilePhotoContent(profileId: string) {
+  // The Profile API has no self-service photo shorthand -- even the caller's own photo
+  // is addressed by profileId (unlike /profiles, /profiles/fields, /profiles/values, etc).
+  const path = `/profiles/${encodeURIComponent(profileId)}/photo/content`;
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
     headers: {
