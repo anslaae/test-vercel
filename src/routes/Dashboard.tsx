@@ -13,6 +13,7 @@ import useAuth from '../auth/useAuth';
 import type {ProfileResponse, SessionDetails} from '../types/api';
 import FlowDebugDialog from '../components/FlowDebugDialog';
 import AppInfoModal from '../components/AppInfoModal';
+import ProfileSummary from '../components/ProfileSummary';
 import ProfileEditPanel from '../components/ProfileEditPanel';
 import OutstandingChangesPanel from '../components/OutstandingChangesPanel';
 import FieldHistoryPanel from '../components/FieldHistoryPanel';
@@ -497,11 +498,6 @@ export default function Dashboard() {
             return String(value);
         };
 
-        const fullName = [userInfo.firstName, userInfo.middleName, userInfo.lastName]
-            .map((value) => (typeof value === 'string' ? value.trim() : ''))
-            .filter((value) => value.length > 0)
-            .join(' ');
-
         const embeddedResourceCount = [
             userInfo._embedded?.account,
             userInfo._embedded?.organization,
@@ -510,14 +506,12 @@ export default function Dashboard() {
             userInfo._embedded?.photo
         ].filter(Boolean).length;
 
-        const personalInfoRows: Array<{ label: string; value: unknown; className?: string }> = [
-            {label: 'Name', value: fullName, className: 'info-item-wide'},
-            {label: 'Profile ID', value: userInfo.profileId},
-            {label: 'Email', value: userInfo.email},
-            {label: 'Language', value: userInfo.language},
-            {label: 'Locale', value: userInfo.locale},
-            {label: 'Date format', value: userInfo.dateFormat},
-            {label: 'Embedded resources', value: `${embeddedResourceCount}/5`}
+        const profileDetailRows: Array<[string, unknown]> = [
+            ['Profile ID', userInfo.profileId],
+            ['Language', userInfo.language],
+            ['Locale', userInfo.locale],
+            ['Date format', userInfo.dateFormat],
+            ['Embedded resources', `${embeddedResourceCount}/5`]
         ];
 
         const embeddedRows: Array<[string, unknown]> = [
@@ -538,27 +532,11 @@ export default function Dashboard() {
         ];
 
         return {
-            personalInfoRows,
+            profileDetailRows,
             embeddedRows,
             linksRows,
             formatDisplayValue
         };
-    };
-
-    const renderUserInfoGrid = () => {
-        const model = getUserDataViewModel();
-        if (!model) return null;
-
-        return (
-            <div className="user-info-grid">
-                {model.personalInfoRows.map(({label, value, className}) => (
-                    <div key={label} className={`info-item${className ? ` ${className}` : ''}`}>
-                        <div className="info-label">{label}</div>
-                        <div className="info-value">{model.formatDisplayValue(value)}</div>
-                    </div>
-                ))}
-            </div>
-        );
     };
 
     const renderUserRawDataSections = () => {
@@ -567,6 +545,21 @@ export default function Dashboard() {
 
         return (
             <>
+                <details className="raw-data-section">
+                    <summary className="raw-data-summary">
+                        <h3 className="section-heading">Profile Details</h3>
+                        <span className="summary-badge">{model.profileDetailRows.length} fields</span>
+                    </summary>
+                    <div className="kv-list">
+                        {model.profileDetailRows.map(([key, value]) => (
+                            <div key={key} className="kv-row">
+                                <span className="kv-key">{key}</span>
+                                <span className="kv-value">{model.formatDisplayValue(value)}</span>
+                            </div>
+                        ))}
+                    </div>
+                </details>
+
                 <details className="raw-data-section">
                     <summary className="raw-data-summary">
                         <h3 className="section-heading">Embedded Resources (if requested)</h3>
@@ -757,7 +750,7 @@ export default function Dashboard() {
                                     </div>
                                 </div>
                             ) : (
-                                renderUserInfoGrid()
+                                <ProfileSummary profile={userInfo} photoUrl={photoUrl}/>
                             )}
                         </div>
 

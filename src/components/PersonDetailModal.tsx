@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getProfileById, getProfilePhotoContent, ApiError, UnauthorizedError } from '../api/client';
 import type { ProfileResponse } from '../types/api';
+import ProfileSummary from './ProfileSummary';
 import ProfileEditPanel from './ProfileEditPanel';
 import OutstandingChangesPanel from './OutstandingChangesPanel';
 import FieldHistoryPanel from './FieldHistoryPanel';
@@ -82,28 +83,7 @@ export default function PersonDetailModal({ profileId, onClose }: PersonDetailMo
               Overview
             </h2>
           </div>
-          <div className="user-info-grid">
-            <div className="info-item info-item-wide">
-              <div className="info-label">Name</div>
-              <div className="info-value">{fullName || 'Not available'}</div>
-            </div>
-            <div className="info-item">
-              <div className="info-label">Email</div>
-              <div className="info-value">{profile?.email ?? 'Not available'}</div>
-            </div>
-            <div className="info-item">
-              <div className="info-label">Organization</div>
-              <div className="info-value">{profile?._embedded?.organization?.name ?? 'Not available'}</div>
-            </div>
-            <div className="info-item">
-              <div className="info-label">Job Title</div>
-              <div className="info-value">{profile?._embedded?.job?.title ?? 'Not available'}</div>
-            </div>
-            <div className="info-item">
-              <div className="info-label">Manager</div>
-              <div className="info-value">{profile?._embedded?.manager?.displayName ?? 'Not available'}</div>
-            </div>
-          </div>
+          <ProfileSummary profile={profile} showHeader={false}/>
         </div>
       )
     },
