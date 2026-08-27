@@ -1062,6 +1062,29 @@ body {
   color: var(--text-secondary);
 }
 
+/* .tabs-bar/.tabs-tab default to light text for the page's gradient background -- the modal
+   sits on a light background instead, so it needs dark text for contrast. */
+.person-detail-modal .tabs-bar {
+  background: var(--bg-white);
+  border: 1px solid var(--border-color);
+}
+
+.person-detail-modal .tabs-tab {
+  color: var(--text-secondary);
+}
+
+.person-detail-modal .tabs-tab:hover {
+  background: var(--bg-light);
+  color: var(--text-primary);
+}
+
+.person-detail-modal .tabs-tab-active,
+.person-detail-modal .tabs-tab-active:hover {
+  background: var(--primary-light);
+  color: var(--primary-color);
+  box-shadow: none;
+}
+
 /* ── Flow Debug Dialog ─────────────────────────────────────────── */
 .debug-overlay {
   position: fixed;
