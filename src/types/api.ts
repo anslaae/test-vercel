@@ -7,9 +7,6 @@ export interface HalLink {
 export interface AccountDetails {
   id: string | null;
   status: 'ACTIVE' | 'INACTIVE' | 'LOCKED' | null;
-  _links?: {
-    self?: HalLink;
-  };
 }
 
 export interface OrganizationDetails {
@@ -49,18 +46,18 @@ export interface PhotoDetails {
   };
 }
 
-export interface MeResponse {
+export interface ProfileResponse {
   profileId: string | null;
   firstName: string | null;
   middleName: string | null;
   lastName: string | null;
   email: string | null;
-  language: string | null;
-  locale: string | null;
-  dateFormat: string | null;
+  // Self-only: omitted by the API when viewing another person's profile.
+  language?: string | null;
+  locale?: string | null;
+  dateFormat?: string | null;
   _links?: {
     self?: HalLink;
-    account?: HalLink;
     organization?: HalLink;
     job?: HalLink;
     manager?: HalLink;
@@ -72,6 +69,213 @@ export interface MeResponse {
     job?: JobDetails;
     manager?: ManagerDetails;
     photo?: PhotoDetails;
+  };
+}
+
+export type FieldType =
+  | 'TEXT'
+  | 'NUMBER'
+  | 'DATE'
+  | 'BOOLEAN'
+  | 'SINGLE_SELECT'
+  | 'MULTI_SELECT'
+  | 'PERSON'
+  | 'MULTI_PERSON'
+  | 'ORGANIZATION'
+  | 'POSITION'
+  | 'MONEY'
+  | 'TEXT_MAP'
+  | 'OTHER';
+
+export interface FieldOption {
+  value: string;
+  label: string;
+}
+
+export interface FieldDescriptor {
+  key: string;
+  label: string;
+  description?: string;
+  type: FieldType;
+  editable: boolean;
+  blockedReason?: string;
+  mandatory: boolean;
+  needsApproval: boolean;
+  options: FieldOption[];
+}
+
+export interface FieldCatalog {
+  _embedded?: {
+    fields: FieldDescriptor[];
+  };
+  _links?: {
+    self?: HalLink;
+  };
+}
+
+export interface FieldValue {
+  key: string;
+  label: string;
+  type: FieldType;
+  value?: string;
+  values?: string[];
+  entries?: Record<string, string>;
+  displayValue?: string;
+}
+
+export interface FieldValues {
+  _embedded?: {
+    values: FieldValue[];
+  };
+  _links?: {
+    self?: HalLink;
+  };
+}
+
+export interface FieldChange {
+  key: string;
+  value?: string | null;
+  values?: string[];
+  entries?: Record<string, string>;
+  effectiveFrom?: string;
+}
+
+export type FieldStatus = 'APPLIED' | 'PENDING_APPROVAL' | 'SCHEDULED';
+
+export interface FieldOutcome {
+  key: string;
+  status: FieldStatus;
+  approver?: unknown;
+  effectiveFrom?: string;
+  changeId?: string;
+}
+
+export interface ProfileUpdateResult {
+  outcome: FieldStatus;
+  fields: FieldOutcome[];
+  _links?: {
+    self?: HalLink;
+    changes?: HalLink;
+  };
+}
+
+export type ChangeKind = 'PENDING_APPROVAL' | 'SCHEDULED';
+
+export interface PendingChange {
+  id: string;
+  key: string;
+  label?: string;
+  kind: ChangeKind;
+  value?: string;
+  displayValue?: string;
+  effectiveFrom?: string;
+  requestedOn?: string;
+  _links?: {
+    self?: HalLink;
+  };
+}
+
+export interface ChangeCollection {
+  _embedded?: {
+    changes: PendingChange[];
+  };
+  _links?: {
+    self?: HalLink;
+  };
+}
+
+export interface HistoryActor {
+  profileId?: string;
+  name: string;
+}
+
+export interface FieldHistoryEntry {
+  key: string;
+  label?: string;
+  value?: string;
+  displayValue?: string;
+  previousValue?: string;
+  previousDisplayValue?: string;
+  validFrom?: string;
+  validTo?: string;
+  changedOn?: string;
+  changedBy?: HistoryActor;
+  approvedOn?: string;
+  approvedBy?: HistoryActor;
+  reason?: string;
+  imported?: boolean;
+}
+
+export interface FieldHistory {
+  _embedded?: {
+    history: FieldHistoryEntry[];
+  };
+  _links?: {
+    self?: HalLink;
+  };
+}
+
+export interface Employee {
+  profileId: string;
+  displayName: string;
+}
+
+export interface EmployeeList {
+  _embedded?: {
+    people: Employee[];
+  };
+  _links?: {
+    self?: HalLink;
+  };
+}
+
+export interface ChangeAwaitingApproval {
+  changeId: string;
+  profileId: string;
+  personName: string;
+  key: string;
+  label?: string;
+  value?: string;
+  displayValue?: string;
+  requestedOn?: string;
+}
+
+export interface ApprovalQueue {
+  _embedded?: {
+    changes: ChangeAwaitingApproval[];
+  };
+  _links?: {
+    self?: HalLink;
+  };
+}
+
+export type ChangeDecisionValue = 'APPROVED' | 'REJECTED';
+
+export interface PersonSummary {
+  profileId: string;
+  displayName: string;
+}
+
+export interface PersonCollection {
+  _embedded?: {
+    people: PersonSummary[];
+  };
+  _links?: {
+    self?: HalLink;
+  };
+}
+
+export type LookupTerm = { email: string } | { employeeId: string } | { name: string };
+
+export interface OrganizationOption {
+  id: string;
+  name: string;
+  parentName?: string;
+}
+
+export interface OrganizationOptions {
+  _embedded?: {
+    organizationOptionResponseList: OrganizationOption[];
   };
 }
 

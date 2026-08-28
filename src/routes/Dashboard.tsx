@@ -1,21 +1,30 @@
 import {useEffect, useMemo, useState} from 'react';
 import {
-    DEFAULT_ME_EMBEDS,
+    DEFAULT_PROFILE_EMBEDS,
     getSessionDetails,
-    getUserInfo,
-    getUserPhotoContent,
+    getProfile,
+    getProfilePhotoContent,
     refreshSessionTokens,
     UnauthorizedError,
     ApiError,
-    type MeEmbedKey
+    type ProfileEmbedKey
 } from '../api/client';
 import useAuth from '../auth/useAuth';
-import type {MeResponse, SessionDetails} from '../types/api';
+import type {ProfileResponse, SessionDetails} from '../types/api';
 import FlowDebugDialog from '../components/FlowDebugDialog';
 import AppInfoModal from '../components/AppInfoModal';
+import ProfileSummary from '../components/ProfileSummary';
+import ProfileEditPanel from '../components/ProfileEditPanel';
+import OutstandingChangesPanel from '../components/OutstandingChangesPanel';
+import FieldHistoryPanel from '../components/FieldHistoryPanel';
+import Tabs from '../components/Tabs';
+import DirectReportsPanel from '../components/DirectReportsPanel';
+import ApprovalQueuePanel from '../components/ApprovalQueuePanel';
+import FindPersonPanel from '../components/FindPersonPanel';
+import PersonDetailModal from '../components/PersonDetailModal';
 import '../styles.css';
 
-const EMBED_OPTIONS: Array<{ key: MeEmbedKey; label: string }> = [
+const EMBED_OPTIONS: Array<{ key: ProfileEmbedKey; label: string }> = [
     {key: 'account', label: 'Account'},
     {key: 'organization', label: 'Organization'},
     {key: 'job', label: 'Job'},
@@ -23,22 +32,22 @@ const EMBED_OPTIONS: Array<{ key: MeEmbedKey; label: string }> = [
     {key: 'photo', label: 'Photo'}
 ];
 
-const EMBED_STORAGE_KEY = 'dashboard_me_embeds';
-const VALID_EMBED_KEYS = new Set<MeEmbedKey>(EMBED_OPTIONS.map((option) => option.key));
+const EMBED_STORAGE_KEY = 'dashboard_profile_embeds';
+const VALID_EMBED_KEYS = new Set<ProfileEmbedKey>(EMBED_OPTIONS.map((option) => option.key));
 
-function loadEmbedSelection(): MeEmbedKey[] {
+function loadEmbedSelection(): ProfileEmbedKey[] {
     const raw = sessionStorage.getItem(EMBED_STORAGE_KEY);
     if (!raw) {
-        return DEFAULT_ME_EMBEDS;
+        return DEFAULT_PROFILE_EMBEDS;
     }
 
     const parsed = raw
         .split(',')
         .map((value) => value.trim())
-        .filter((value): value is MeEmbedKey => VALID_EMBED_KEYS.has(value as MeEmbedKey));
+        .filter((value): value is ProfileEmbedKey => VALID_EMBED_KEYS.has(value as ProfileEmbedKey));
 
     if (parsed.length === 0) {
-        return DEFAULT_ME_EMBEDS;
+        return DEFAULT_PROFILE_EMBEDS;
     }
 
     // Keep stable rendering order based on the configured embed options.
@@ -50,16 +59,22 @@ function loadEmbedSelection(): MeEmbedKey[] {
 export default function Dashboard() {
     const [debugMode, setDebugMode] = useState(() => sessionStorage.getItem('oauth_debug_enabled') === '1');
     const debuggerEnabled = debugMode;
-    const [selectedEmbeds, setSelectedEmbeds] = useState<MeEmbedKey[]>(() => loadEmbedSelection());
-    const [appliedEmbeds, setAppliedEmbeds] = useState<MeEmbedKey[]>(() => loadEmbedSelection());
+    // Share one array reference between the two so the very first call to setAppliedEmbeds(selectedEmbeds)
+    // in runRefreshUserData (e.g. from a profile edit) isn't seen as a change -- fetchAllData's effect
+    // depends on appliedEmbeds by reference, and re-running it would flash the full-page loading screen.
+    const [initialEmbeds] = useState<ProfileEmbedKey[]>(() => loadEmbedSelection());
+    const [selectedEmbeds, setSelectedEmbeds] = useState<ProfileEmbedKey[]>(initialEmbeds);
+    const [appliedEmbeds, setAppliedEmbeds] = useState<ProfileEmbedKey[]>(initialEmbeds);
     const selectedEmbedQueryValue = selectedEmbeds.join(',');
-    const selectedMeEndpointWithEmbeds = selectedEmbedQueryValue ? `/api/me?embed=${selectedEmbedQueryValue}` : '/api/me';
+    const selectedProfileEndpointWithEmbeds = selectedEmbedQueryValue ? `/api/profiles?embed=${selectedEmbedQueryValue}` : '/api/profiles';
     const appliedEmbedQueryValue = appliedEmbeds.join(',');
-    const appliedMeEndpointWithEmbeds = appliedEmbedQueryValue ? `/api/me?embed=${appliedEmbedQueryValue}` : '/api/me';
+    const appliedProfileEndpointWithEmbeds = appliedEmbedQueryValue ? `/api/profiles?embed=${appliedEmbedQueryValue}` : '/api/profiles';
     const selectedEmbedSignature = [...selectedEmbeds].sort().join(',');
     const appliedEmbedSignature = [...appliedEmbeds].sort().join(',');
     const hasPendingEmbedChanges = selectedEmbedSignature !== appliedEmbedSignature;
-    const [userInfo, setUserInfo] = useState<MeResponse | null>(null);
+    const [userInfo, setUserInfo] = useState<ProfileResponse | null>(null);
+    const [changesVersion, setChangesVersion] = useState(0);
+    const [viewingProfile, setViewingProfile] = useState<{ profileId: string; displayName: string } | null>(null);
     const [userInfoError, setUserInfoError] = useState<{message: string; endpoint: string; status?: number} | null>(null);
     const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
     const [loading, setLoading] = useState(
@@ -132,7 +147,7 @@ export default function Dashboard() {
                 setUserInfoError(null);
 
                 const [userResult, sessionResult] = await Promise.allSettled([
-                    getUserInfo(appliedEmbeds),
+                    getProfile(appliedEmbeds),
                     getSessionDetails()
                 ]);
 
@@ -150,7 +165,7 @@ export default function Dashboard() {
                         }
                         // Retry both after session refresh
                         const [retryUser, retrySession] = await Promise.allSettled([
-                            getUserInfo(appliedEmbeds),
+                            getProfile(appliedEmbeds),
                             getSessionDetails()
                         ]);
                         if (!active) return;
@@ -161,7 +176,7 @@ export default function Dashboard() {
                             const retryErr = retryUser.reason;
                             setUserInfoError({
                                 message: retryErr instanceof Error ? retryErr.message : 'Failed to load personal details',
-                                endpoint: retryErr instanceof ApiError ? retryErr.endpoint : appliedMeEndpointWithEmbeds,
+                                endpoint: retryErr instanceof ApiError ? retryErr.endpoint : appliedProfileEndpointWithEmbeds,
                                 status: retryErr instanceof ApiError ? retryErr.status : undefined
                             });
                         }
@@ -187,7 +202,7 @@ export default function Dashboard() {
                             return;
                         }
                         try {
-                            const retryData = await getUserInfo(appliedEmbeds);
+                            const retryData = await getProfile(appliedEmbeds);
                             if (!active) return;
                             setUserInfo(retryData);
                             setUserInfoError(null);
@@ -195,7 +210,7 @@ export default function Dashboard() {
                             if (!active) return;
                             setUserInfoError({
                                 message: retryErr instanceof Error ? retryErr.message : 'Failed to load personal details',
-                                endpoint: retryErr instanceof ApiError ? retryErr.endpoint : appliedMeEndpointWithEmbeds,
+                                endpoint: retryErr instanceof ApiError ? retryErr.endpoint : appliedProfileEndpointWithEmbeds,
                                 status: retryErr instanceof ApiError ? retryErr.status : undefined
                             });
                         }
@@ -204,27 +219,31 @@ export default function Dashboard() {
                     console.error('[Dashboard] Personal details API failed:', err);
                     setUserInfoError({
                         message: err instanceof Error ? err.message : 'Failed to load personal details',
-                        endpoint: err instanceof ApiError ? err.endpoint : appliedMeEndpointWithEmbeds,
+                        endpoint: err instanceof ApiError ? err.endpoint : appliedProfileEndpointWithEmbeds,
                         status: err instanceof ApiError ? err.status : undefined
                     });
                 }
 
-                // Photo is always non-blocking
-                try {
-                    const photoBlob = await getUserPhotoContent();
-                    if (!active) return;
-                    setPhotoUrl((current) => {
-                        if (current) URL.revokeObjectURL(current);
-                        return photoBlob ? URL.createObjectURL(photoBlob) : null;
-                    });
-                } catch (photoError) {
-                    if (!active) return;
-                    if (photoError instanceof UnauthorizedError) return;
-                    console.warn('[Dashboard] Failed to load profile photo:', photoError);
-                    setPhotoUrl((current) => {
-                        if (current) URL.revokeObjectURL(current);
-                        return null;
-                    });
+                // Photo is always non-blocking. The Profile API has no self-service photo
+                // shorthand — even the caller's own photo is addressed by profileId.
+                const profileId = userResult.status === 'fulfilled' ? userResult.value.profileId : null;
+                if (profileId) {
+                    try {
+                        const photoBlob = await getProfilePhotoContent(profileId);
+                        if (!active) return;
+                        setPhotoUrl((current) => {
+                            if (current) URL.revokeObjectURL(current);
+                            return photoBlob ? URL.createObjectURL(photoBlob) : null;
+                        });
+                    } catch (photoError) {
+                        if (!active) return;
+                        if (photoError instanceof UnauthorizedError) return;
+                        console.warn('[Dashboard] Failed to load profile photo:', photoError);
+                        setPhotoUrl((current) => {
+                            if (current) URL.revokeObjectURL(current);
+                            return null;
+                        });
+                    }
                 }
             } catch (err) {
                 if (!active) return;
@@ -254,7 +273,7 @@ export default function Dashboard() {
         sessionStorage.setItem(EMBED_STORAGE_KEY, selectedEmbeds.join(','));
     }, [selectedEmbeds]);
 
-    const toggleEmbed = (embedKey: MeEmbedKey) => {
+    const toggleEmbed = (embedKey: ProfileEmbedKey) => {
         setSelectedEmbeds((current) => {
             if (current.includes(embedKey)) {
                 return current.filter((value) => value !== embedKey);
@@ -286,38 +305,40 @@ export default function Dashboard() {
     const runRefreshUserData = async () => {
         const requestEmbeds = selectedEmbeds;
         const requestQueryValue = requestEmbeds.join(',');
-        const requestEndpoint = requestQueryValue ? `/api/me?embed=${requestQueryValue}` : '/api/me';
+        const requestEndpoint = requestQueryValue ? `/api/profiles?embed=${requestQueryValue}` : '/api/profiles';
 
         try {
             setRefreshingUserData(true);
             setError(null);
             setUserInfoError(null);
             setAppliedEmbeds(requestEmbeds);
-            const userData = await getUserInfo(requestEmbeds);
+            const userData = await getProfile(requestEmbeds);
             setUserInfo(userData);
 
-            try {
-                const photoBlob = await getUserPhotoContent();
-                setPhotoUrl((current) => {
-                    if (current) {
-                        URL.revokeObjectURL(current);
+            if (userData.profileId) {
+                try {
+                    const photoBlob = await getProfilePhotoContent(userData.profileId);
+                    setPhotoUrl((current) => {
+                        if (current) {
+                            URL.revokeObjectURL(current);
+                        }
+
+                        return photoBlob ? URL.createObjectURL(photoBlob) : null;
+                    });
+                } catch (photoError) {
+                    if (photoError instanceof UnauthorizedError) {
+                        await refreshSession();
+                        return;
                     }
 
-                    return photoBlob ? URL.createObjectURL(photoBlob) : null;
-                });
-            } catch (photoError) {
-                if (photoError instanceof UnauthorizedError) {
-                    await refreshSession();
-                    return;
+                    console.warn('[Dashboard] Failed to refresh profile photo:', photoError);
+                    setPhotoUrl((current) => {
+                        if (current) {
+                            URL.revokeObjectURL(current);
+                        }
+                        return null;
+                    });
                 }
-
-                console.warn('[Dashboard] Failed to refresh profile photo:', photoError);
-                setPhotoUrl((current) => {
-                    if (current) {
-                        URL.revokeObjectURL(current);
-                    }
-                    return null;
-                });
             }
 
              if (debuggerEnabled) {
@@ -418,10 +439,10 @@ export default function Dashboard() {
                         title="Calling the Personal Details API"
                         description="The dashboard is now ready to load your information. Clicking Continue will trigger a browser request to the BFF. The browser sends only your HttpOnly session cookie, and the BFF adds the access token before calling the protected personal-details API. If the token has expired, the BFF can refresh it server-side before forwarding the request."
                         details={[
-                            {label: 'Browser request', value: `GET ${selectedMeEndpointWithEmbeds}`},
+                            {label: 'Browser request', value: `GET ${selectedProfileEndpointWithEmbeds}`},
                             {label: 'Browser sends', value: 'Session cookie only' },
                             {label: 'BFF adds', value: 'Bearer access token' },
-                            {label: 'Protected API', value: '/me endpoint' },
+                            {label: 'Protected API', value: '/profiles endpoint' },
                             {label: 'Token refresh', value: 'Handled server-side if needed' }
                         ]}
                         onContinue={handleDismissStep4}
@@ -477,11 +498,6 @@ export default function Dashboard() {
             return String(value);
         };
 
-        const fullName = [userInfo.firstName, userInfo.middleName, userInfo.lastName]
-            .map((value) => (typeof value === 'string' ? value.trim() : ''))
-            .filter((value) => value.length > 0)
-            .join(' ');
-
         const embeddedResourceCount = [
             userInfo._embedded?.account,
             userInfo._embedded?.organization,
@@ -490,14 +506,12 @@ export default function Dashboard() {
             userInfo._embedded?.photo
         ].filter(Boolean).length;
 
-        const personalInfoRows: Array<{ label: string; value: unknown; className?: string }> = [
-            {label: 'Name', value: fullName, className: 'info-item-wide'},
-            {label: 'Profile ID', value: userInfo.profileId},
-            {label: 'Email', value: userInfo.email},
-            {label: 'Language', value: userInfo.language},
-            {label: 'Locale', value: userInfo.locale},
-            {label: 'Date format', value: userInfo.dateFormat},
-            {label: 'Embedded resources', value: `${embeddedResourceCount}/5`}
+        const profileDetailRows: Array<[string, unknown]> = [
+            ['Profile ID', userInfo.profileId],
+            ['Language', userInfo.language],
+            ['Locale', userInfo.locale],
+            ['Date format', userInfo.dateFormat],
+            ['Embedded resources', `${embeddedResourceCount}/5`]
         ];
 
         const embeddedRows: Array<[string, unknown]> = [
@@ -511,7 +525,6 @@ export default function Dashboard() {
         const links = userInfo._links || {};
         const linksRows: Array<[string, unknown]> = [
             ['Self', links.self?.href],
-            ['Account', links.account?.href],
             ['Organization', links.organization?.href],
             ['Job', links.job?.href],
             ['Manager', links.manager?.href],
@@ -519,27 +532,11 @@ export default function Dashboard() {
         ];
 
         return {
-            personalInfoRows,
+            profileDetailRows,
             embeddedRows,
             linksRows,
             formatDisplayValue
         };
-    };
-
-    const renderUserInfoGrid = () => {
-        const model = getUserDataViewModel();
-        if (!model) return null;
-
-        return (
-            <div className="user-info-grid">
-                {model.personalInfoRows.map(({label, value, className}) => (
-                    <div key={label} className={`info-item${className ? ` ${className}` : ''}`}>
-                        <div className="info-label">{label}</div>
-                        <div className="info-value">{model.formatDisplayValue(value)}</div>
-                    </div>
-                ))}
-            </div>
-        );
     };
 
     const renderUserRawDataSections = () => {
@@ -548,6 +545,21 @@ export default function Dashboard() {
 
         return (
             <>
+                <details className="raw-data-section">
+                    <summary className="raw-data-summary">
+                        <h3 className="section-heading">Profile Details</h3>
+                        <span className="summary-badge">{model.profileDetailRows.length} fields</span>
+                    </summary>
+                    <div className="kv-list">
+                        {model.profileDetailRows.map(([key, value]) => (
+                            <div key={key} className="kv-row">
+                                <span className="kv-key">{key}</span>
+                                <span className="kv-value">{model.formatDisplayValue(value)}</span>
+                            </div>
+                        ))}
+                    </div>
+                </details>
+
                 <details className="raw-data-section">
                     <summary className="raw-data-summary">
                         <h3 className="section-heading">Embedded Resources (if requested)</h3>
@@ -694,112 +706,7 @@ export default function Dashboard() {
         );
     };
 
-    return (
-        <div className="dashboard-container">
-            {showStep3Dialog && (
-                <FlowDebugDialog
-                    step={3}
-                    totalSteps={4}
-                    title="Login Complete — Tokens Exchanged"
-                    description="The BFF has successfully exchanged the authorization code for tokens at the authorization server's token endpoint. Your access token, ID token, and refresh token (if issued) are stored securely server-side. Only an HttpOnly session cookie was set in your browser — no tokens ever reached the client."
-                    details={[
-                        {label: 'Tokens stored', value: 'Server-side only (BFF)'},
-                        {label: 'Browser receives', value: 'HttpOnly session cookie'},
-                        {label: 'PKCE verifier', value: 'Consumed and discarded'},
-                        {label: 'Next step', value: 'Dashboard requests personal details through the BFF'},
-                        ...(customState ? [{label: 'Your custom state value', value: customState}] : [])
-                    ]}
-                    onContinue={handleDismissStep3}
-                />
-            )}
-            {showStep4Dialog && (
-                <FlowDebugDialog
-                    step={4}
-                    totalSteps={4}
-                    title="Calling the Personal Details API"
-                    description="The dashboard is now ready to load your information. Clicking Continue will trigger a browser request to the BFF. The browser sends only your HttpOnly session cookie, and the BFF adds the access token before calling the protected personal-details API. If the token has expired, the BFF can refresh it server-side before forwarding the request."
-                    details={[
-                        {label: 'Browser request', value: `GET ${selectedMeEndpointWithEmbeds}`},
-                        {label: 'Browser sends', value: 'Session cookie only' },
-                        {label: 'BFF adds', value: 'Bearer access token' },
-                        {label: 'Protected API', value: '/me endpoint' },
-                        {label: 'Token refresh', value: 'Handled server-side if needed' }
-                    ]}
-                    onContinue={handleDismissStep4}
-                />
-            )}
-            {showRefreshExplainDialog && (
-                <FlowDebugDialog
-                    step={1}
-                    totalSteps={2}
-                    title="Preparing Refresh Token Exchange"
-                    description="Clicking Continue will call a dedicated BFF endpoint. The browser sends only your session cookie; the refresh token itself stays server-side. The BFF then calls the authorization server token endpoint with grant_type=refresh_token to obtain fresh tokens."
-                    details={[
-                        {label: 'Browser request', value: 'POST /api/auth-refresh'},
-                        {label: 'Refresh token location', value: 'Server-side session only'},
-                        {label: 'OAuth grant used', value: 'refresh_token'},
-                        {label: 'Client exposure', value: 'No tokens exposed to browser JavaScript'}
-                    ]}
-                    onContinue={() => {
-                        setShowRefreshExplainDialog(false);
-                        void runRefreshSessionData();
-                    }}
-                />
-            )}
-            {showRefreshCompleteDialog && (
-                <FlowDebugDialog
-                    step={2}
-                    totalSteps={2}
-                    title="Refresh Complete — Session Updated"
-                    description="The BFF stored the refreshed tokens server-side and updated your session. The dashboard now shows the latest token metadata from the BFF."
-                    details={refreshDialogDetails}
-                    onContinue={() => setShowRefreshCompleteDialog(false)}
-                />
-            )}
-            {showUserDataExplainDialog && (
-                <FlowDebugDialog
-                    step={1}
-                    totalSteps={2}
-                    title="Fetching Personal Data Through BFF"
-                    description="Clicking Continue will request your personal details from the backend API. Your browser sends only the session cookie; the BFF automatically attaches the access token to the request. If the access token has expired, the BFF will silently refresh it using the refresh token before forwarding your request."
-                    details={[
-                        {label: 'Request flow', value: 'Browser → BFF → Backend API'},
-                        {label: 'Browser request', value: `GET ${selectedMeEndpointWithEmbeds}`},
-                        {label: 'Session cookie', value: 'Sent with request (HttpOnly)'},
-                        {label: 'Access token', value: 'Attached by BFF (never exposed to browser)'},
-                        {label: 'Auto-refresh', value: 'BFF refreshes if token expired'}
-                    ]}
-                    onContinue={() => {
-                        setShowUserDataExplainDialog(false);
-                        void runRefreshUserData();
-                    }}
-                />
-            )}
-            {showUserDataCompleteDialog && (
-                <FlowDebugDialog
-                    step={2}
-                    totalSteps={2}
-                    title="Personal Data Retrieved"
-                    description="The BFF successfully forwarded your request to the backend API using your access token. Your personal information is now displayed on the dashboard."
-                    details={userDataDialogDetails}
-                    onContinue={() => setShowUserDataCompleteDialog(false)}
-                />
-            )}
-            <AppInfoModal open={showAppInfo} onClose={() => setShowAppInfo(false)}/>
-
-            <div className="dashboard-header">
-                <div>
-                    <h1 className="dashboard-title">
-                        <span className="title-icon">👋</span>
-                        Welcome to Your Dashboard
-                    </h1>
-                </div>
-                <button onClick={() => logout()} className="logout-button">
-                    <span>Sign Out</span>
-                    <span className="logout-icon">→</span>
-                </button>
-            </div>
-
+    const overviewTabContent = (
             <div className="dashboard-card">
                 <div className="card-header">
                     <h2 className="card-title">
@@ -843,7 +750,7 @@ export default function Dashboard() {
                                     </div>
                                 </div>
                             ) : (
-                                renderUserInfoGrid()
+                                <ProfileSummary profile={userInfo} photoUrl={photoUrl}/>
                             )}
                         </div>
 
@@ -876,7 +783,7 @@ export default function Dashboard() {
                                             </label>
                                         ))}
                                     </div>
-                                    <div className="embed-controls-meta">Next refresh request: <code>{selectedMeEndpointWithEmbeds}</code></div>
+                                    <div className="embed-controls-meta">Next refresh request: <code>{selectedProfileEndpointWithEmbeds}</code></div>
                                     {hasPendingEmbedChanges && (
                                         <div className="embed-controls-pending">Pending changes - click Refresh Personal Data to apply</div>
                                     )}
@@ -903,7 +810,9 @@ export default function Dashboard() {
                     )}
                 </div>
             </div>
+    );
 
+    const sessionTabContent = (
             <div className="dashboard-card session-details-card">
                 <div className="card-header">
                     <h2 className="card-title">
@@ -950,6 +859,160 @@ export default function Dashboard() {
                     </div>
                 </div>
             </div>
+    );
+
+    const tabs = [
+        {id: 'overview', label: 'Overview', icon: '👤', content: overviewTabContent},
+        {
+            id: 'edit',
+            label: 'Edit Profile',
+            icon: '✏️',
+            content: (
+                <ProfileEditPanel
+                    onProfileUpdated={() => {
+                        void runRefreshUserData();
+                        setChangesVersion((current) => current + 1);
+                    }}
+                />
+            )
+        },
+        {
+            id: 'changes',
+            label: 'Changes & History',
+            icon: '⏳',
+            content: (
+                <>
+                    <OutstandingChangesPanel refreshSignal={changesVersion}/>
+                    <FieldHistoryPanel refreshSignal={changesVersion}/>
+                </>
+            )
+        },
+        {
+            id: 'manager',
+            label: 'Manager',
+            icon: '👥',
+            content: (
+                <>
+                    <FindPersonPanel onSelect={(profileId, displayName) => setViewingProfile({profileId, displayName})}/>
+                    <DirectReportsPanel onViewProfile={(profileId, displayName) => setViewingProfile({profileId, displayName})}/>
+                    <ApprovalQueuePanel onViewProfile={(profileId, displayName) => setViewingProfile({profileId, displayName})}/>
+                </>
+            )
+        },
+        {id: 'session', label: 'Session', icon: '🔐', content: sessionTabContent}
+    ];
+
+    return (
+        <div className="dashboard-container">
+            {showStep3Dialog && (
+                <FlowDebugDialog
+                    step={3}
+                    totalSteps={4}
+                    title="Login Complete — Tokens Exchanged"
+                    description="The BFF has successfully exchanged the authorization code for tokens at the authorization server's token endpoint. Your access token, ID token, and refresh token (if issued) are stored securely server-side. Only an HttpOnly session cookie was set in your browser — no tokens ever reached the client."
+                    details={[
+                        {label: 'Tokens stored', value: 'Server-side only (BFF)'},
+                        {label: 'Browser receives', value: 'HttpOnly session cookie'},
+                        {label: 'PKCE verifier', value: 'Consumed and discarded'},
+                        {label: 'Next step', value: 'Dashboard requests personal details through the BFF'},
+                        ...(customState ? [{label: 'Your custom state value', value: customState}] : [])
+                    ]}
+                    onContinue={handleDismissStep3}
+                />
+            )}
+            {showStep4Dialog && (
+                <FlowDebugDialog
+                    step={4}
+                    totalSteps={4}
+                    title="Calling the Personal Details API"
+                    description="The dashboard is now ready to load your information. Clicking Continue will trigger a browser request to the BFF. The browser sends only your HttpOnly session cookie, and the BFF adds the access token before calling the protected personal-details API. If the token has expired, the BFF can refresh it server-side before forwarding the request."
+                    details={[
+                        {label: 'Browser request', value: `GET ${selectedProfileEndpointWithEmbeds}`},
+                        {label: 'Browser sends', value: 'Session cookie only' },
+                        {label: 'BFF adds', value: 'Bearer access token' },
+                        {label: 'Protected API', value: '/profiles endpoint' },
+                        {label: 'Token refresh', value: 'Handled server-side if needed' }
+                    ]}
+                    onContinue={handleDismissStep4}
+                />
+            )}
+            {showRefreshExplainDialog && (
+                <FlowDebugDialog
+                    step={1}
+                    totalSteps={2}
+                    title="Preparing Refresh Token Exchange"
+                    description="Clicking Continue will call a dedicated BFF endpoint. The browser sends only your session cookie; the refresh token itself stays server-side. The BFF then calls the authorization server token endpoint with grant_type=refresh_token to obtain fresh tokens."
+                    details={[
+                        {label: 'Browser request', value: 'POST /api/auth-refresh'},
+                        {label: 'Refresh token location', value: 'Server-side session only'},
+                        {label: 'OAuth grant used', value: 'refresh_token'},
+                        {label: 'Client exposure', value: 'No tokens exposed to browser JavaScript'}
+                    ]}
+                    onContinue={() => {
+                        setShowRefreshExplainDialog(false);
+                        void runRefreshSessionData();
+                    }}
+                />
+            )}
+            {showRefreshCompleteDialog && (
+                <FlowDebugDialog
+                    step={2}
+                    totalSteps={2}
+                    title="Refresh Complete — Session Updated"
+                    description="The BFF stored the refreshed tokens server-side and updated your session. The dashboard now shows the latest token metadata from the BFF."
+                    details={refreshDialogDetails}
+                    onContinue={() => setShowRefreshCompleteDialog(false)}
+                />
+            )}
+            {showUserDataExplainDialog && (
+                <FlowDebugDialog
+                    step={1}
+                    totalSteps={2}
+                    title="Fetching Personal Data Through BFF"
+                    description="Clicking Continue will request your personal details from the backend API. Your browser sends only the session cookie; the BFF automatically attaches the access token to the request. If the access token has expired, the BFF will silently refresh it using the refresh token before forwarding your request."
+                    details={[
+                        {label: 'Request flow', value: 'Browser → BFF → Backend API'},
+                        {label: 'Browser request', value: `GET ${selectedProfileEndpointWithEmbeds}`},
+                        {label: 'Session cookie', value: 'Sent with request (HttpOnly)'},
+                        {label: 'Access token', value: 'Attached by BFF (never exposed to browser)'},
+                        {label: 'Auto-refresh', value: 'BFF refreshes if token expired'}
+                    ]}
+                    onContinue={() => {
+                        setShowUserDataExplainDialog(false);
+                        void runRefreshUserData();
+                    }}
+                />
+            )}
+            {showUserDataCompleteDialog && (
+                <FlowDebugDialog
+                    step={2}
+                    totalSteps={2}
+                    title="Personal Data Retrieved"
+                    description="The BFF successfully forwarded your request to the backend API using your access token. Your personal information is now displayed on the dashboard."
+                    details={userDataDialogDetails}
+                    onContinue={() => setShowUserDataCompleteDialog(false)}
+                />
+            )}
+            <AppInfoModal open={showAppInfo} onClose={() => setShowAppInfo(false)}/>
+
+            {viewingProfile && (
+                <PersonDetailModal profileId={viewingProfile.profileId} onClose={() => setViewingProfile(null)}/>
+            )}
+
+            <div className="dashboard-header">
+                <div>
+                    <h1 className="dashboard-title">
+                        <span className="title-icon">👋</span>
+                        Welcome to Your Dashboard
+                    </h1>
+                </div>
+                <button onClick={() => logout()} className="logout-button">
+                    <span>Sign Out</span>
+                    <span className="logout-icon">→</span>
+                </button>
+            </div>
+
+            <Tabs tabs={tabs} />
 
             <div className="dashboard-footer">
                 <p className="footer-text">

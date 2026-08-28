@@ -1,0 +1,1833 @@
+openapi: 3.0.3
+info:
+  title: Profile API
+  description: |
+    Read and update a person's profile, projected to exactly what the authenticated caller is
+    permitted to see and edit. The target is addressed by its profile GUID (`profileId`) — the shared id
+    used across the profile and lookup APIs — and every call is authorized against the authenticated
+    principal, so the path GUID is never trusted on its own.
+
+    ## Read
+
+    * `GET /profiles` — the caller's own profile, including self-only account status and UI preferences.
+    * `GET /profiles/{profileId}` — another person's, masked to the caller. Self-only concerns are never
+      exposed for another person.
+    * Sub-resources (organization, job, manager, photo) are addressed by profile GUID and can be inlined
+      with `?embed=`.
+
+    ## Discover, then update
+
+    Editable fields are **tenant- and caller-specific**, so they are discovered at runtime rather than
+    fixed in this contract. Fields are addressed by a stable integration key (e.g. `FIRST_NAME`,
+    `MARITAL_STATUS`), never by a numeric HRIS id:
+
+      1. `GET /profiles/fields` (or `/profiles/{profileId}/fields`) lists what this caller may edit on
+         this profile, with each field's type, whether it needs approval, and any select options.
+      2. `GET /profiles/values` returns the current values in the shape the update accepts.
+      3. `PATCH /profiles` (or `/profiles/{profileId}`) submits a sparse patch, each entry naming a field
+         by `key` and carrying its `value`, `values` or `entries` depending on the field's `type`.
+
+    Fields that reference something else — a person, an organization, a position, a select option — carry
+    that thing's **id**, never the name a user typed. Enumerable sets are listed as the field's `options`;
+    people and organizations are too many to list, so each is resolved through its own endpoint
+    (`POST /lookup` and `GET /profiles/organization/options`).
+
+    Clearing a field is explicit: send an empty value. A null or omitted one leaves the field untouched, and
+    an entry that names a field without stating any value is skipped rather than acted on.
+
+    ## Approval-aware outcomes
+
+    Each field is evaluated independently against the tenant's approval configuration and the caller's
+    role relative to the target, so one request can mix outcomes. The response reports an outcome per
+    field: `APPLIED`, `PENDING_APPROVAL`, or `SCHEDULED` for a future effective date. HTTP **200** when
+    everything applied, **202** when anything is outstanding. The single roll-up `outcome` ranks
+    `PENDING_APPROVAL` above `SCHEDULED` above `APPLIED`, so a mixed request reports the most outstanding
+    thing it left behind rather than "some of this applied".
+
+    The approver's side of the same flow is `GET /profiles/changes/awaiting-approval` and
+    `POST /profiles/changes/{changeId}/decision`: what is waiting on you, and approving or rejecting it.
+
+    A `PENDING_APPROVAL` or `SCHEDULED` outcome names the change it created via `changeId`. Nothing here
+    predicts when an approver will act — `GET /profiles/changes` lists outstanding changes until they are
+    resolved, and `DELETE /profiles/changes/{changeId}` withdraws one.
+
+    Approvals are never bypassable on this path (GDPR / auditability): every change is attributed to the
+    caller and, when gated, held for the configured approver.
+  version: 2.6.0
+  contact:
+    name: Engineering Excellence
+    email: ee@catalystone.com
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Profile
+    description: View a person's profile, masked to the caller's access.
+  - name: Profile Fields
+    description: Discover which profile fields the caller may edit and how, and preview their current values.
+  - name: Profile Changes
+    description: List and cancel a person's outstanding changes (awaiting approval or scheduled).
+  - name: Profile History
+    description: Read the recorded history of a person's profile fields — the audit trail of their data.
+
+paths:
+  /:
+    get:
+      tags: [Profile]
+      summary: Get the authenticated caller's own profile.
+      operationId: getProfile
+      description: |
+        Returns flat personal-details fields about the caller — including self-only account and
+        preferences — plus HAL links to related resources. Sub-resources can be inlined with
+        `embed=<key>` (repeatable or comma-separated). Valid embed keys: `account`, `organization`,
+        `job`, `manager`, `photo`. A requested sub-resource with no data is omitted from `_embedded`
+        (its HAL link is still present). Top-level fields the caller has no value for are null.
+      parameters:
+        - $ref: '#/components/parameters/EmbedParam'
+        - $ref: '#/components/parameters/AcceptLanguageHeader'
+      responses:
+        '200':
+          description: Profile details response (self).
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+              examples:
+                self:
+                  $ref: '#/components/examples/SelfProfile'
+        '400': { $ref: '#/components/responses/InvalidEmbedError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+    patch:
+      tags: [Profile]
+      summary: Update your own profile (self-service).
+      operationId: updateMyProfile
+      description: |
+        Self-service variant of `PATCH /profiles/{profileId}` — edits the **authenticated caller's own**
+        profile. Because this is named-user authentication, the target is resolved from the principal; no
+        profile GUID is needed. Body, sparse-patch semantics, per-field outcomes, and status codes are
+        identical to the GUID-addressed route.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdate'
+            examples:
+              nameAndEmail:
+                $ref: '#/components/examples/UpdateNameAndEmail'
+              maritalStatus:
+                $ref: '#/components/examples/UpdateMaritalStatus'
+      responses:
+        '200':
+          description: All supplied fields were applied directly.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/ProfileUpdateResult'
+              examples:
+                allApplied:
+                  $ref: '#/components/examples/ResultAllApplied'
+        '202':
+          description: |
+            At least one field did not take effect immediately: it was routed to an approval workflow, or
+            accepted for a future date. Each field's `status` says which, and its `changeId` names the
+            outstanding change that was created.
+
+            There is no completion signal and no deadline — nothing here predicts when or whether an
+            approver will act. To follow up, read `GET /profiles/changes` (the response links to it as
+            `changes`), where the change appears until it is approved, applied or withdrawn; a change that
+            no longer appears there has been resolved. `DELETE /profiles/changes/{changeId}` withdraws one.
+
+            A field that is both approval-gated and future-dated comes back `PENDING_APPROVAL` — it will not
+            take effect on its date until somebody approves it — carrying both `effectiveFrom` and the change
+            request's `changeId`. Such a field has a scheduled change behind it as well, so it can appear
+            twice in `GET /profiles/changes` (once as `CR-…`, once as `SC-…`), and only the `CR-…` id is
+            reported here.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/ProfileUpdateResult'
+              examples:
+                mixed:
+                  $ref: '#/components/examples/ResultMixed'
+        '400':
+          description: |
+            The request is invalid — no fields supplied, an entry with no `key`, every entry stating no
+            value at all, a malformed value, or an `effectiveFrom` that is not an ISO-8601 date or is
+            before today.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '409':
+          description: A supplied field is read-only or not editable for this tenant.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /{profileId}:
+    get:
+      tags: [Profile]
+      summary: Get a person's profile, masked to the caller.
+      operationId: getProfileById
+      description: |
+        Returns flat personal-details fields about the target person plus HAL links to related
+        sub-resources. Sub-resources can be inlined with `embed=<key>`. Valid embed keys:
+        `organization`, `job`, `manager`, `photo` (plus `account` when the target is the caller
+        themselves). Self-only concerns (account, preferences) are null / absent for another person.
+        Top-level fields the caller cannot see, or that have no value, are null.
+      parameters:
+        - $ref: '#/components/parameters/ProfileIdParam'
+        - $ref: '#/components/parameters/EmbedParam'
+        - $ref: '#/components/parameters/AcceptLanguageHeader'
+      responses:
+        '200':
+          description: Profile details response.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+              examples:
+                other:
+                  $ref: '#/components/examples/OtherProfile'
+        '400': { $ref: '#/components/responses/InvalidEmbedError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+    patch:
+      tags: [Profile]
+      summary: Update a person's profile.
+      operationId: updateProfile
+      description: |
+        Applies a **sparse patch** — only the fields present in `fields` are changed; anything omitted is
+        left untouched. A field is addressed by its integration `key` (discover the valid keys via
+        `GET /profiles/{profileId}/fields`). Supply a plain string `value` for single-valued fields, or a
+        `values` array for multi-select fields; a non-empty `values` takes precedence over `value`.
+
+        Every entry must name a `key` — a keyless entry is rejected with 400, never skipped. An entry that
+        names a field but states neither `value` nor `values` asks for nothing: it is skipped and does not
+        appear in the response's `fields`, so `fields` lists one entry per field that was *acted on* — not
+        necessarily one per entry sent.
+
+        `profileId` is always a real profile GUID (the same id returned by the read-side `/profiles`). For
+        self-service, pass your own profile GUID. Authorization is always evaluated against the authenticated
+        principal — the path GUID is never trusted on its own.
+
+        Each supplied field is applied directly or routed to approval depending on tenant configuration and
+        the caller's role relative to the target. The response lists the outcome for every field.
+      parameters:
+        - $ref: '#/components/parameters/ProfileIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdate'
+            examples:
+              nameAndEmail:
+                $ref: '#/components/examples/UpdateNameAndEmail'
+              maritalStatus:
+                $ref: '#/components/examples/UpdateMaritalStatus'
+      responses:
+        '200':
+          description: All supplied fields were applied directly.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/ProfileUpdateResult'
+              examples:
+                allApplied:
+                  $ref: '#/components/examples/ResultAllApplied'
+        '202':
+          description: |
+            At least one field did not take effect immediately: it was routed to an approval workflow, or
+            accepted for a future date. Each field's `status` says which, and its `changeId` names the
+            outstanding change that was created.
+
+            There is no completion signal and no deadline — nothing here predicts when or whether an
+            approver will act. To follow up, read `GET /profiles/changes` (the response links to it as
+            `changes`), where the change appears until it is approved, applied or withdrawn; a change that
+            no longer appears there has been resolved. `DELETE /profiles/changes/{changeId}` withdraws one.
+
+            A field that is both approval-gated and future-dated comes back `PENDING_APPROVAL` — it will not
+            take effect on its date until somebody approves it — carrying both `effectiveFrom` and the change
+            request's `changeId`. Such a field has a scheduled change behind it as well, so it can appear
+            twice in `GET /profiles/changes` (once as `CR-…`, once as `SC-…`), and only the `CR-…` id is
+            reported here.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/ProfileUpdateResult'
+              examples:
+                mixed:
+                  $ref: '#/components/examples/ResultMixed'
+        '400':
+          description: |
+            The request is invalid — e.g. no fields supplied, an entry with no `key`, every entry stating no
+            value at all, an `effectiveFrom` that is not an ISO-8601 date or is before today, or a malformed
+            value (a select field such as `MARITAL_STATUS` must be an option value — a scale-value GUID —
+            from the field's `options`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: https://datatracker.ietf.org/doc/html/rfc7231#section-6.5.1
+                title: Bad Request
+                status: 400
+                detail: MARITAL_STATUS must be a scale-value GUID
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+        '409':
+          description: A supplied field is read-only or not editable for this tenant.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: https://datatracker.ietf.org/doc/html/rfc7231#section-6.5.8
+                title: Conflict
+                status: 409
+                detail: 'Field not editable: MARITAL_STATUS'
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /{profileId}/organization:
+    get:
+      tags: [Profile]
+      summary: Get the organization the person is assigned to.
+      operationId: getProfileOrganization
+      parameters:
+        - $ref: '#/components/parameters/ProfileIdParam'
+        - $ref: '#/components/parameters/AcceptLanguageHeader'
+      responses:
+        '200':
+          description: Organization sub-resource.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /{profileId}/job:
+    get:
+      tags: [Profile]
+      summary: Get the person's job information.
+      operationId: getProfileJob
+      parameters:
+        - $ref: '#/components/parameters/ProfileIdParam'
+        - $ref: '#/components/parameters/AcceptLanguageHeader'
+      responses:
+        '200':
+          description: Job sub-resource.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /{profileId}/manager:
+    get:
+      tags: [Profile]
+      summary: Get the person's direct manager.
+      operationId: getProfileManager
+      description: |
+        204 and 404 answer different questions. A 404 means there is no such person to ask about — the
+        profile does not exist, or is not visible to this caller at all. A 204 means the person is
+        visible and has no manager to report.
+
+        A manager the caller is not permitted to see is also reported as 204, deliberately: answering
+        403 would confirm that a manager exists, which is itself the disclosure the mask exists to
+        prevent.
+      parameters:
+        - $ref: '#/components/parameters/ProfileIdParam'
+      responses:
+        '200':
+          description: Manager sub-resource.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/Manager'
+        '204':
+          description: The person is visible and has no manager to report (or none this caller may see).
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /{profileId}/photo:
+    get:
+      tags: [Profile]
+      summary: Get profile photo metadata for the person.
+      operationId: getProfilePhoto
+      description: |
+        Returns photo metadata only. The binary is served from `/profiles/{profileId}/photo/content`.
+
+        204 and 404 answer different questions: 404 means there is no such person to ask about, 204
+        means the person is visible and has no photo set (or none this caller may see).
+      parameters:
+        - $ref: '#/components/parameters/ProfileIdParam'
+      responses:
+        '200':
+          description: Photo metadata.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/Photo'
+        '204':
+          description: The person is visible and has no profile photo (or none this caller may see).
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /{profileId}/photo/content:
+    get:
+      tags: [Profile]
+      summary: Get profile photo binary for the person.
+      operationId: getProfilePhotoContent
+      description: |
+        Streams the raw photo bytes. The `Content-Type` reflects the stored image's actual media
+        type as detected by the server (e.g. `image/jpeg`, `image/png`, `image/gif`), falling back
+        to `application/octet-stream` when the type cannot be determined. The listed content types
+        are representative, not exhaustive.
+
+        Absence is reported as 204, the same as on `/photo`: 404 is reserved for there being no such
+        person to ask about.
+      parameters:
+        - $ref: '#/components/parameters/ProfileIdParam'
+      responses:
+        '200':
+          description: Photo binary.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/gif:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '204':
+          description: The person is visible and has no profile photo (or none this caller may see).
+        '404': { $ref: '#/components/responses/NotFoundError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /fields:
+    get:
+      tags: [Profile Fields]
+      summary: List the fields you may edit on your own profile.
+      operationId: getMyEditableFields
+      description: |
+        Self-service discovery — returns the fields the **authenticated caller** may edit on their own
+        profile, each described by its integration `key`, `type`, `mandatory`/`needsApproval` flags, and any
+        select `options`. Because this is named-user authentication, no profile GUID is needed. Call this
+        before `PATCH /profiles` to learn the exact keys and value shapes to submit.
+      responses:
+        '200':
+          description: The caller-scoped set of editable fields.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/FieldCatalog'
+              examples:
+                catalog:
+                  $ref: '#/components/examples/FieldCatalogExample'
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /{profileId}/fields:
+    get:
+      tags: [Profile Fields]
+      summary: List the fields you may edit on a specific profile.
+      operationId: getEditableFields
+      description: |
+        Discovery for a specific profile — returns the fields the caller may edit on the profile identified
+        by `profileId` (pass your own GUID for self, or another person's for an authorized other-edit).
+        Editability, `blockedReason`, and `needsApproval` are all evaluated for the caller against this
+        target, exactly as the update path decides self-vs-other.
+      parameters:
+        - $ref: '#/components/parameters/ProfileIdParam'
+      responses:
+        '200':
+          description: The caller-scoped set of editable fields for this profile.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/FieldCatalog'
+              examples:
+                catalog:
+                  $ref: '#/components/examples/FieldCatalogExample'
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /values:
+    get:
+      tags: [Profile Fields]
+      summary: Preview the current values of your own standard fields.
+      operationId: getMyFieldValues
+      description: |
+        Self-service preview — returns the **current value** of each standard field on the authenticated
+        caller's own profile, across the same broad set advertised by `GET /profiles/fields`. Pair the two
+        by `key` to show a value and then edit it via `PATCH /profiles`. `value`/`values`/`entries` carry
+        the machine value in the shape `PATCH` accepts (text, or an id for a reference field in `value`,
+        ids in `values` for a multi-valued one, named parts in `entries` for `MONEY`/`TEXT_MAP`);
+        `displayValue` is the human-readable rendering.
+      responses:
+        '200':
+          description: The caller's current standard-field values.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/FieldValues'
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /{profileId}/values:
+    get:
+      tags: [Profile Fields]
+      summary: Preview the current values of a specific profile's standard fields.
+      operationId: getFieldValues
+      description: |
+        Preview for a specific profile — returns the current standard-field values on the profile identified
+        by `profileId` (your own GUID for self, or another person's). For another person, each value is
+        included only where the caller has visibility of that field, so nothing leaks.
+      parameters:
+        - $ref: '#/components/parameters/ProfileIdParam'
+      responses:
+        '200':
+          description: The current standard-field values the caller may see on this profile.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/FieldValues'
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /history:
+    get:
+      tags: [Profile History]
+      summary: Read the history of your own profile fields.
+      operationId: getMyFieldHistory
+      description: |
+        The audit trail of your own data — every recorded change to a standard field, newest first: what the
+        field was set to, what it held before, when the value took effect, who made the change and who
+        approved it. `GET /values` answers what a field holds now; this answers what it used to.
+
+        Pass `key` (repeatable) to narrow the answer to named fields. Without it the whole profile's history
+        is returned, which on a long-serving employee is a long list.
+      parameters:
+        - { $ref: '#/components/parameters/HistoryKeyParam' }
+      responses:
+        '200':
+          description: The recorded changes, newest first.
+          content:
+            application/hal+json:
+              schema: { $ref: '#/components/schemas/FieldHistory' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /{profileId}/history:
+    get:
+      tags: [Profile History]
+      summary: Read the history of a specific profile's fields.
+      operationId: getFieldHistory
+      description: |
+        The audit trail of a specific profile (your own GUID for self, or another person's). A field is
+        included only where the caller may see that field — the same visibility right that decides whether
+        they may see its current value, applied by the engine itself. An empty answer therefore means
+        "nothing you may see has changed", not "nothing ever changed".
+      parameters:
+        - { $ref: '#/components/parameters/ProfileIdParam' }
+        - { $ref: '#/components/parameters/HistoryKeyParam' }
+      responses:
+        '200':
+          description: The recorded changes the caller may see on this profile, newest first.
+          content:
+            application/hal+json:
+              schema: { $ref: '#/components/schemas/FieldHistory' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /organization/options:
+    get:
+      tags: [Profile Fields]
+      summary: Find organizations you may set on your own profile.
+      operationId: getMyOrganizationOptions
+      description: |
+        Resolves an organization name to the id an update needs. A select field advertises its `options` in
+        the field descriptor, but an organization tree is too large for that, so it is searched by name here.
+
+        Searching requires the right to set the organization on the profile in question — enumerating
+        organizations reaches no further than assigning one would. Disabled organizations never appear, at
+        least two characters of the name are required, and the result count is capped.
+      parameters:
+        - { $ref: '#/components/parameters/OrganizationNameParam' }
+      responses:
+        '200':
+          description: The matching organizations, each with the id to send as the field's `value`.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/OrganizationOptions'
+        '400':
+          description: The search term is missing or shorter than two characters.
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /{profileId}/organization/options:
+    get:
+      tags: [Profile Fields]
+      summary: Find organizations you may set on a specific profile.
+      operationId: getOrganizationOptions
+      description: |
+        The same resolver for a specific profile, gated by the caller's right to set the organization on
+        *that* profile.
+      parameters:
+        - { $ref: '#/components/parameters/ProfileIdParam' }
+        - { $ref: '#/components/parameters/OrganizationNameParam' }
+      responses:
+        '200':
+          description: The matching organizations, each with the id to send as the field's `value`.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/OrganizationOptions'
+        '400':
+          description: The search term is missing or shorter than two characters.
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /employees:
+    get:
+      tags: [Profile Fields]
+      summary: List the people who report directly to you.
+      operationId: getMyEmployees
+      description: |
+        The people who report **directly** to you. Each carries the `profileId` the rest of this API is
+        addressed by, so this is a manager's entry point: list your employees, then read or edit one through
+        `/profiles/{profileId}` and its sub-resources.
+
+        Direct reports only — someone further down the reporting chain is not listed, and neither is an HR
+        population. Everyone is named through your own mask, so a report you may not see is absent rather
+        than named, and disabled accounts are left out.
+      responses:
+        '200':
+          description: The caller's direct reports; empty when they manage nobody.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/EmployeeList'
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              description: '`no-store` — the response names people.'
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /changes/awaiting-approval:
+    get:
+      tags: [Profile Changes]
+      summary: List the changes waiting on your approval.
+      operationId: getChangesAwaitingApproval
+      description: |
+        The changes waiting on **your** approval — your direct reports', and your HR population's where you
+        hold a local HR role. Who approves what is the engine's own routing, so this list and the decision it
+        feeds cannot disagree.
+
+        Each item names the person by `profileId` and the name you are permitted to see, and the field by
+        its integration `key` plus the `label` your tenant gives it — show the label, decide on the field,
+        not on the key. A change whose field has no public key, or whose person you may not be shown, is
+        left out rather than surfaced with an internal id.
+
+        This is the approver's counterpart of `GET /profiles/changes`, which lists changes *you* submitted.
+      responses:
+        '200':
+          description: The changes awaiting the caller's approval; empty when there are none.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/ApprovalQueue'
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /changes/{changeId}/decision:
+    post:
+      tags: [Profile Changes]
+      summary: Approve or reject a change awaiting your approval.
+      operationId: decideChange
+      description: |
+        Approves or rejects one change awaiting your approval. Approving applies the requested value to that
+        person's profile; rejecting discards it and the profile keeps what it had.
+
+        Only a change awaiting approval can be decided — a scheduled change is withdrawn with
+        `DELETE /profiles/changes/{changeId}` instead. A change that is not in your approval queue is a
+        **404**, whether it does not exist or is simply not yours to decide, so this cannot be used to learn
+        what is outstanding on a profile out of reach.
+      parameters:
+        - { $ref: '#/components/parameters/ChangeIdParam' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeDecision' }
+      responses:
+        '204':
+          description: The decision was recorded.
+        '400':
+          description: The decision is missing or unrecognised, or the id names a change that cannot be approved.
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /changes:
+    get:
+      tags: [Profile Changes]
+      summary: List your own outstanding profile changes.
+      operationId: getMyChanges
+      description: |
+        Lists the authenticated caller's outstanding changes — those awaiting approval
+        (`kind: PENDING_APPROVAL`) and those scheduled for a future date (`kind: SCHEDULED`). Each carries
+        an opaque `id` to cancel it via `DELETE /profiles/changes/{changeId}`.
+      responses:
+        '200':
+          description: The caller's outstanding changes.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/ChangeCollection'
+              examples:
+                changes:
+                  $ref: '#/components/examples/ChangeCollectionExample'
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /{profileId}/changes:
+    get:
+      tags: [Profile Changes]
+      summary: List a specific profile's outstanding changes.
+      operationId: getProfileChanges
+      parameters:
+        - $ref: '#/components/parameters/ProfileIdParam'
+      responses:
+        '200':
+          description: The profile's outstanding changes.
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/ChangeCollection'
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /changes/{changeId}:
+    delete:
+      tags: [Profile Changes]
+      summary: Cancel one of your own outstanding changes.
+      operationId: cancelMyChange
+      description: |
+        Cancels the identified outstanding change (a pending change request or a scheduled change). The
+        `changeId` is the opaque id from the list endpoint.
+      parameters:
+        - $ref: '#/components/parameters/ChangeIdParam'
+      responses:
+        '204':
+          description: The change was cancelled.
+        '400':
+          description: The change id is malformed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404':
+          description: No outstanding change with that id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /{profileId}/changes/{changeId}:
+    delete:
+      tags: [Profile Changes]
+      summary: Cancel an outstanding change on a specific profile.
+      operationId: cancelProfileChange
+      parameters:
+        - $ref: '#/components/parameters/ProfileIdParam'
+        - $ref: '#/components/parameters/ChangeIdParam'
+      responses:
+        '204':
+          description: The change was cancelled.
+        '400':
+          description: The change id is malformed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404':
+          description: No outstanding change with that id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    HistoryKeyParam:
+      name: key
+      in: query
+      required: false
+      description: |
+        Integration key of a field to limit the history to. Repeat it for several fields; omit it for every
+        field the caller may see.
+      schema:
+        type: array
+        items: { type: string }
+      style: form
+      explode: true
+      example: [ADDRESS_HOME_STREET]
+
+    ProfileIdParam:
+      name: profileId
+      in: path
+      required: true
+      description: Profile GUID of the person. Pass another person's (from /lookup) or your own for self-service.
+      schema:
+        type: string
+        format: uuid
+    EmbedParam:
+      name: embed
+      in: query
+      required: false
+      description: |
+        Sub-resources to inline. Comma-separated, repeatable. Allowed values:
+        `account`, `organization`, `job`, `manager`, `photo`. `account` is only populated for the
+        caller's own profile.
+      explode: false
+      schema:
+        type: array
+        items:
+          type: string
+          enum: [account, organization, job, manager, photo]
+    AcceptLanguageHeader:
+      name: Accept-Language
+      in: header
+      required: false
+      description: IETF language tag used to translate localized values (organization name, job role/location). Falls back to the caller's preferred language.
+      schema:
+        type: string
+        example: en-US
+    OrganizationNameParam:
+      name: name
+      in: query
+      required: true
+      description: |
+        Part of the organization's name to match, at least 2 characters. A shorter or missing term is a 400:
+        it would match most of the tree rather than resolve anything.
+      schema:
+        type: string
+        minLength: 2
+      example: nordic
+
+    ChangeIdParam:
+      name: changeId
+      in: path
+      required: true
+      description: |
+        Opaque id of an outstanding change, from the list endpoint. Treat it as opaque: the shape is a
+        kind prefix and the change's GUID, and neither part should be constructed or parsed by a client.
+      schema:
+        type: string
+        pattern: ^(CR|SC)-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        example: SC-2b2d9f1a-2c44-4d0e-9a1c-8e2f0b6a1234
+
+  schemas:
+    Profile:
+      type: object
+      description: |
+        Top-level personal details, masked to the caller. Localized values respect Accept-Language.
+        Core identity fields are always present (null when the caller has no value or no visibility
+        right). `language`, `locale`, `dateFormat` and the embedded `account` are self-only and are
+        omitted / null when viewing another person.
+      properties:
+        profileId:
+          type: string
+          format: uuid
+          description: The person's primary profile guid.
+        firstName:
+          type: string
+          description: Legal first name.
+        middleName:
+          type: string
+          description: Legal middle name. Null when not set.
+        lastName:
+          type: string
+          description: Legal last name.
+        email:
+          type: string
+          format: email
+          description: Work email.
+        language:
+          type: string
+          description: (Self only) ISO 639-1 language code (e.g. `en`).
+          example: en
+        locale:
+          type: string
+          description: (Self only) IETF BCP 47 locale tag (e.g. `en-US`).
+          example: en-US
+        dateFormat:
+          type: string
+          description: (Self only) Date format pattern using `java.time.format.DateTimeFormatter` letters.
+          example: yyyy-MM-dd
+        _links:
+          $ref: '#/components/schemas/ProfileLinks'
+        _embedded:
+          type: object
+          description: Inlined sub-resources keyed by embed key (only present when requested).
+          properties:
+            account:      { $ref: '#/components/schemas/Account' }
+            organization: { $ref: '#/components/schemas/Organization' }
+            job:          { $ref: '#/components/schemas/Job' }
+            manager:      { $ref: '#/components/schemas/Manager' }
+            photo:        { $ref: '#/components/schemas/Photo' }
+
+    ProfileLinks:
+      type: object
+      properties:
+        self:         { $ref: '#/components/schemas/HalLink' }
+        organization: { $ref: '#/components/schemas/HalLink' }
+        job:          { $ref: '#/components/schemas/HalLink' }
+        manager:      { $ref: '#/components/schemas/HalLink' }
+        photo:        { $ref: '#/components/schemas/HalLink' }
+
+    Account:
+      type: object
+      description: Self-only account status. Embed-only (no standalone endpoint).
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: ID of the user account.
+        status: { $ref: '#/components/schemas/AccountStatus' }
+
+    Organization:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        parentId:
+          type: string
+          format: uuid
+          description: ID of the parent organization unit, if any.
+        managerName:
+          type: string
+          description: Display name of the manager of the organization.
+        _links:
+          type: object
+          properties:
+            self: { $ref: '#/components/schemas/HalLink' }
+
+    Job:
+      type: object
+      properties:
+        title:        { type: string }
+        roleId:       { type: string, format: uuid }
+        roleName:     { type: string }
+        locationName: { type: string }
+        _links:
+          type: object
+          properties:
+            self: { $ref: '#/components/schemas/HalLink' }
+
+    Manager:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        displayName: { type: string }
+        email:       { type: string, format: email }
+        _links:
+          type: object
+          properties:
+            self: { $ref: '#/components/schemas/HalLink' }
+
+    Photo:
+      type: object
+      properties:
+        mimeType: { type: string, example: image/jpeg }
+        _links:
+          type: object
+          properties:
+            self:    { $ref: '#/components/schemas/HalLink' }
+            content: { $ref: '#/components/schemas/HalLink' }
+
+    HalLink:
+      type: object
+      properties:
+        href: { type: string, format: uri-reference }
+
+    AccountStatus:
+      type: string
+      enum: [ACTIVE, INACTIVE, LOCKED]
+      description: |
+        Serialized as the uppercase enum name. Defaults to `ACTIVE` when no account record resolves.
+        * `ACTIVE`   - user can log in
+        * `INACTIVE` - the account is disabled (terminated, deactivated, not-yet-started)
+        * `LOCKED`   - the account is temporarily locked out (e.g. too many failed logins)
+
+    Problem:
+      description: Problem Details as per RFC 7807 / RFC 9457.
+      type: object
+      required: [type]
+      properties:
+        type:     { type: string, format: uri-reference, default: 'about:blank' }
+        title:    { type: string }
+        status:   { type: integer }
+        detail:   { type: string }
+        instance: { type: string, format: uri-reference }
+
+    ProfileUpdate:
+      type: object
+      description: |
+        Sparse patch. Include only the fields you want to change; at least one field must be present.
+      required: [fields]
+      properties:
+        fields:
+          type: array
+          minItems: 1
+          description: The field changes to apply, addressed by integration key.
+          items: { $ref: '#/components/schemas/FieldChange' }
+
+    FieldChange:
+      type: object
+      required: [key]
+      description: |
+        A single requested field value. Address the field by its integration `key` (from the discovery
+        endpoint) — `key` is mandatory, and an entry that names no field is rejected with 400 rather than
+        skipped. For single-valued fields (text, number, date, boolean, single-select, person,
+        organization, position) send `value`; for multi-select and multi-person fields send `values`; for
+        fields made of named parts (`MONEY`, `TEXT_MAP`) send `entries`.
+
+        **The shape must match the field the `key` names.** A `values` list sent for a single-valued field,
+        or a `value` sent for a keyed one, is rejected with 400 — only the matching part of an entry is
+        read, so it would leave nothing to write and clear the field instead of setting it. A multi-valued
+        field accepts either shape: a lone `value` is read as a selection of one.
+
+        A **non-empty** `values` always wins over `value`, and a non-empty `entries` over both. An empty
+        `values` or `entries` only decides when nothing else was stated: clients routinely send `values: []`
+        or `entries: {}` to mean "this is not that kind of field", and that must not be mistaken for an
+        instruction to empty something.
+
+        **Clearing a field is explicit.** Send an empty `value` (`""`), an empty `values` (`[]`), or an
+        empty `entries` (`{}`) — whichever matches the field — to clear it. A `null` or omitted value leaves the field untouched: naming a field without saying what
+        to put in it is treated as an incomplete request, not an instruction to erase data, so it is skipped
+        and does not appear in the response's `fields`. A request in which no entry states any value is a
+        400 rather than a no-op 200.
+
+        Clearing is still subject to the tenant's rules — the engine refuses to empty a mandatory field.
+      properties:
+        key:
+          type: string
+          description: The field's integration key, e.g. `FIRST_NAME`, `MARITAL_STATUS`, `ADDRESS_HOME_STREET`.
+          example: FIRST_NAME
+        value:
+          type: string
+          nullable: true
+          description: |
+            The single value for a text/number/date/boolean field, or the referenced id for a
+            single-select, person, organization or position field. Use ISO-8601 for dates and
+            `"true"`/`"false"` for booleans. For a single-select field, send one option `value` (a
+            scale-value GUID) from the field's `options`; for a person field, a profile id from
+            `POST /lookup`; for an organization field, an id from `GET /profiles/organization/options`.
+            Send `""` to clear the field. Ignored when `values` is present.
+        values:
+          type: array
+          items:
+            type: string
+          description: |
+            The chosen ids for a multi-valued field: option values for `MULTI_SELECT`, profile ids for
+            `MULTI_PERSON`. Send `[]` — with no `value` alongside it — to clear it. Omit for single-valued
+            fields: an omitted `values` means "not a multi-valued instruction", and an empty one sent
+            together with a `value` is read the same way.
+        entries:
+          type: object
+          additionalProperties: { type: string }
+          description: |
+            The named parts of a `MONEY` or `TEXT_MAP` field, and the only way to write one.
+
+            A `MONEY` field takes `amount` and `currency`, e.g.
+            `{"amount": "52000", "currency": "3f8c…"}`; `currency` is one of the field's `options` and may
+            be omitted to store a bare amount. A `TEXT_MAP` field takes one entry per option, keyed by an
+            option `value` from `options`, e.g. `{"3f8c…": "Runs the team"}`.
+
+            What you send **replaces the whole field**, so read the current parts from
+            `GET /profiles/values` and resend the ones you are not changing. Send `{}` — with no `value`
+            alongside — to clear the field.
+        effectiveFrom:
+          type: string
+          format: date
+          description: |
+            Optional ISO-8601 date (e.g. `2026-12-01`) the change should take effect. Omit (or today) to
+            apply immediately; a later date schedules the change for that date (returned as `SCHEDULED`).
+            A date before today is rejected with `400` on any profile.
+
+            "Later" is measured from the profile's own baseline, which is today for anyone already employed.
+            For a **not-yet-started** profile — a future hire whose data does not exist yet — the baseline is
+            the hire date instead, so a date up to and including the hire date is that profile's initial data
+            and comes back `APPLIED`, not `SCHEDULED`.
+
+    ProfileUpdateResult:
+      type: object
+      description: Per-field outcome of the update.
+      properties:
+        outcome:
+          allOf:
+            - $ref: '#/components/schemas/FieldStatus'
+          description: |
+            The single status describing the whole update, ranking `PENDING_APPROVAL` above `SCHEDULED`
+            above `APPLIED`. A mixed request therefore reports the most outstanding thing it left behind,
+            not "some of this applied" — read `fields` for what each one actually did.
+        fields:
+          type: array
+          description: |
+            One entry per field that was acted on, in request order. An entry that named a field but stated
+            no value asked for nothing and is absent here, so this can be shorter than the `fields` sent.
+          items: { $ref: '#/components/schemas/FieldOutcome' }
+        _links:
+          type: object
+          properties:
+            self: { $ref: '#/components/schemas/HalLink' }
+            changes:
+              allOf:
+                - $ref: '#/components/schemas/HalLink'
+              description: |
+                The outstanding-changes collection for this profile. Present only when this write left
+                something outstanding — i.e. when any field carries a `changeId`.
+
+    FieldOutcome:
+      type: object
+      description: Outcome for one field, echoed by the same integration `key` the request used.
+      properties:
+        key:
+          type: string
+          description: The integration key of the field that was written.
+          example: PRIVATE_EMAIL
+        status: { $ref: '#/components/schemas/FieldStatus' }
+        approver:
+          allOf:
+            - $ref: '#/components/schemas/Approver'
+          description: |
+            The approving role. Present only when `status` is `PENDING_APPROVAL` — and not always then:
+            the engine does not report which role a change was routed to on this path, so this is
+            currently absent even for a pending change. Do not treat its absence as "applied"; read
+            `status` for that.
+        effectiveFrom:
+          type: string
+          format: date
+          description: |
+            The date the change takes effect. Present for `SCHEDULED`, and for a `PENDING_APPROVAL`
+            change that is also future-dated (it takes effect on this date once approved).
+        changeId:
+          type: string
+          description: |
+            The outstanding change this write created. Present for `PENDING_APPROVAL` and `SCHEDULED`,
+            absent when the value was applied outright.
+
+            It is the same id `GET /profiles/changes` reports, so you can follow this exact change or
+            withdraw it with `DELETE /profiles/changes/{changeId}` instead of matching entries up by
+            field key.
+          pattern: ^(CR|SC)-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+          example: CR-1f0c8c2e-7d83-4a4f-8e3d-1c1f3a9a4d11
+
+    EmployeeList:
+      type: object
+      description: |
+        HAL collection of the caller's direct reports, ordered by name. Carried under `_embedded.people`;
+        `_embedded` is omitted entirely when the caller manages nobody.
+      properties:
+        _embedded:
+          type: object
+          properties:
+            people:
+              type: array
+              items: { $ref: '#/components/schemas/Employee' }
+        _links:
+          type: object
+          properties:
+            self: { $ref: '#/components/schemas/HalLink' }
+
+    Employee:
+      type: object
+      description: One direct report, with a link to their profile.
+      properties:
+        profileId:
+          type: string
+          format: uuid
+          description: The id every per-person endpoint takes.
+        displayName:
+          type: string
+          description: The person's name as this manager is permitted to see it; show this, never the id.
+
+    ApprovalQueue:
+      type: object
+      description: |
+        HAL collection of the changes awaiting the caller's approval. Carried under `_embedded.changes`;
+        `_embedded` is omitted entirely when nothing awaits them.
+      properties:
+        _embedded:
+          type: object
+          properties:
+            changes:
+              type: array
+              items: { $ref: '#/components/schemas/ChangeAwaitingApproval' }
+        _links:
+          type: object
+          properties:
+            self: { $ref: '#/components/schemas/HalLink' }
+
+    ChangeAwaitingApproval:
+      type: object
+      description: One change waiting on the caller's decision, with a link to the profile it belongs to.
+      properties:
+        changeId:
+          type: string
+          description: The opaque id to pass to the decision endpoint; treat it as opaque.
+          pattern: '^CR-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+          example: CR-1f0c8c2e-7d83-4a4f-8e3d-1c1f3a9a4d11
+        profileId:
+          type: string
+          format: uuid
+          description: The profile the change belongs to; follow the `profile` link to read the person.
+        personName:
+          type: string
+          description: The person's name as this approver is permitted to see it.
+        key:
+          type: string
+          description: The integration key of the field being changed.
+          example: ADDRESS_HOME_COUNTRY
+        label:
+          type: string
+          description: |
+            That field's label in your language — show this, not the `key`. Omitted when the tenant has no
+            label for the field.
+          example: Country
+        value:
+          type: string
+          description: The requested new value; for select fields, the option's scale-value id.
+        displayValue:
+          type: string
+          description: |
+            The same value in words — the option's name, a person's name, `52000 NOK` — and the one to show
+            a person. Omitted when the value is unset or nothing about it resolves.
+          example: Norway
+        requestedOn:
+          type: string
+          format: date
+          description: When the change was submitted; omitted when the engine does not expose it.
+
+    ChangeDecision:
+      type: object
+      required: [decision]
+      description: |
+        An approver's decision on one change. `decision` must be `APPROVED` or `REJECTED` — anything else is
+        a 400 rather than a guess at the more permissive of the two.
+      properties:
+        decision:
+          type: string
+          enum: [APPROVED, REJECTED]
+          description: Apply the requested value, or discard it.
+        comment:
+          type: string
+          description: The approver's reason, kept with the change. Expected on a rejection.
+      example:
+        decision: REJECTED
+        comment: Please use the office address.
+
+    FieldCatalog:
+      type: object
+      description: |
+        HAL collection of the fields the caller may edit on the target profile. Fields are carried under
+        `_embedded.fields`; `_embedded` is omitted entirely when the caller may edit no fields.
+      properties:
+        _embedded:
+          type: object
+          properties:
+            fields:
+              type: array
+              items: { $ref: '#/components/schemas/FieldDescriptor' }
+        _links:
+          type: object
+          properties:
+            self: { $ref: '#/components/schemas/HalLink' }
+
+    FieldDescriptor:
+      type: object
+      description: How one editable field must be supplied, scoped to the caller against the target profile.
+      properties:
+        key:
+          type: string
+          description: The stable integration key used to address this field in a `FieldChange`.
+          example: MARITAL_STATUS
+        label:
+          type: string
+          description: The caller-localized field label.
+        description:
+          type: string
+          description: Optional help text; omitted when the tenant defines none.
+        type: { $ref: '#/components/schemas/FieldType' }
+        editable:
+          type: boolean
+          description: Whether the caller may currently change this field.
+        blockedReason:
+          type: string
+          description: When not editable, a short human-readable reason; omitted when editable.
+        mandatory:
+          type: boolean
+          description: Whether the field may not be cleared.
+        needsApproval:
+          type: boolean
+          description: |
+            Whether editing this field would route to an approval workflow for this caller, as predicted by
+            the approval engine (no side effects).
+        options:
+          type: array
+          description: |
+            The selectable values for `SINGLE_SELECT`/`MULTI_SELECT` fields, the currencies a `MONEY` field
+            may be in, and the keys a `TEXT_MAP` field's `entries` may use; empty otherwise. A `PERSON`,
+            `MULTI_PERSON`, `ORGANIZATION` or `POSITION` field carries none — each is resolved by endpoint.
+          items: { $ref: '#/components/schemas/FieldOption' }
+
+    FieldHistory:
+      type: object
+      description: |
+        HAL collection of recorded changes, newest first. Entries are carried under `_embedded.history`;
+        `_embedded` is omitted entirely when nothing the caller may see has changed.
+      properties:
+        _embedded:
+          type: object
+          properties:
+            history:
+              type: array
+              items: { $ref: '#/components/schemas/FieldHistoryEntry' }
+        _links:
+          type: object
+          properties:
+            self: { $ref: '#/components/schemas/HalLink' }
+
+    FieldHistoryEntry:
+      type: object
+      description: One recorded change to one field — the audit-trail counterpart of a `FieldValue`.
+      properties:
+        key:
+          type: string
+          description: The integration key of the field that changed.
+          example: MARITAL_STATUS
+        label:
+          type: string
+          description: That field's label in your language — show this, not the `key`.
+          example: Marital status
+        value:
+          type: string
+          description: The value the field was set to, as stored (a scale-value id for a select field).
+        displayValue:
+          type: string
+          description: That value in words — the option's name, a person's name, `52000 NOK`. Show this one.
+          example: Married
+        previousValue:
+          type: string
+          description: What the field held before this change, as stored. Absent on the oldest recorded change.
+        previousDisplayValue:
+          type: string
+          description: That previous value in words. Absent on the oldest recorded change.
+        validFrom:
+          type: string
+          format: date
+          description: The date the value took effect. Absent when the change was not effective-dated.
+        validTo:
+          type: string
+          format: date
+          description: The date the value stopped applying, for a value on a timeline. Absent while current.
+        changedOn:
+          type: string
+          format: date-time
+          description: When the change was recorded.
+        changedBy: { $ref: '#/components/schemas/HistoryActor' }
+        approvedOn:
+          type: string
+          format: date-time
+          description: When the change was approved. Absent when it needed no approval.
+        approvedBy: { $ref: '#/components/schemas/HistoryActor' }
+        reason:
+          type: string
+          description: The reason given for the change. Absent when none was given.
+        imported:
+          type: boolean
+          description: |
+            True when the change came from a data import rather than a person. Such an entry names no
+            changer — report it as imported rather than attributing it to somebody.
+
+    HistoryActor:
+      type: object
+      description: |
+        Somebody named in the history — who changed a field, or who approved it. `name` is always present;
+        `profileId` only when you may also open that person, so a reference you cannot follow is never
+        handed out. The whole object is absent for a change no person made.
+      properties:
+        profileId:
+          type: string
+          format: uuid
+          description: Their profile, for reading the rest of their data. Absent when they are out of reach.
+        name:
+          type: string
+          description: Their name.
+          example: Ada Lovelace
+
+    FieldValues:
+      type: object
+      description: |
+        HAL collection of the current values of the target profile's standard fields. Values are carried
+        under `_embedded.values`; `_embedded` is omitted entirely when no field values are surfaced.
+      properties:
+        _embedded:
+          type: object
+          properties:
+            values:
+              type: array
+              items: { $ref: '#/components/schemas/FieldValue' }
+        _links:
+          type: object
+          properties:
+            self: { $ref: '#/components/schemas/HalLink' }
+
+    FieldValue:
+      type: object
+      description: The current value of one standard field, for preview. Pair by `key` with a `FieldDescriptor`.
+      properties:
+        key:
+          type: string
+          description: The stable integration key that addresses this field (matches the descriptor's key).
+          example: COUNTRY
+        label:
+          type: string
+          description: The caller-localized field label.
+        type: { $ref: '#/components/schemas/FieldType' }
+        value:
+          type: string
+          description: |
+            The single machine value in the shape `PATCH /profiles` accepts — plain text, a scale-value
+            GUID for `SINGLE_SELECT`, a profile id for `PERSON`, an organization id for `ORGANIZATION`, or
+            a position id for `POSITION`. Omitted when the field is empty.
+        values:
+          type: array
+          description: |
+            The machine values for a multi-valued field — scale-value GUIDs for `MULTI_SELECT`, profile ids
+            for `MULTI_PERSON`; empty otherwise.
+          items:
+            type: string
+        entries:
+          type: object
+          additionalProperties: { type: string }
+          description: |
+            The named parts of a `MONEY` or `TEXT_MAP` field, in the shape `PATCH /profiles` accepts —
+            `amount`/`currency` for `MONEY`, one entry per option id for `TEXT_MAP`. Empty for every other
+            type, and for a keyed field that holds nothing.
+        displayValue:
+          type: string
+          description: |
+            The caller-localized, human-readable rendering for preview (the option label(s) for select
+            fields). Omitted when the field is empty.
+
+    OrganizationOptions:
+      type: object
+      description: The organizations matching a name search, in HAL collection form.
+      properties:
+        _embedded:
+          type: object
+          properties:
+            organizationOptionResponseList:
+              type: array
+              items: { $ref: '#/components/schemas/OrganizationOption' }
+
+    OrganizationOption:
+      type: object
+      description: One organization a profile's organization field may be set to.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The organization id to send as the field's `value`.
+        name:
+          type: string
+          description: The organization's name in the caller's language.
+        parentName:
+          type: string
+          description: |
+            The parent organization's name; omitted at the top of the tree. Organizations commonly share a
+            name ("Sales"), so this is what tells two matches apart.
+
+    FieldOption:
+      type: object
+      description: One selectable value of a select field.
+      properties:
+        value:
+          type: string
+          description: The stable identifier to send back when selecting this option (a scale-value GUID).
+        label:
+          type: string
+          description: The caller-localized display text.
+
+    FieldType:
+      type: string
+      description: |
+        How a value must be supplied for a field.
+        * `TEXT` / `NUMBER` / `DATE` / `BOOLEAN` - a plain string in `FieldChange.value` (ISO-8601 for
+          dates, `"true"`/`"false"` for booleans).
+        * `SINGLE_SELECT` - one option's `value` (from `options`) in `FieldChange.value`.
+        * `MULTI_SELECT`  - one or more option values in `FieldChange.values`.
+        * `PERSON`        - one person's profile id in `FieldChange.value`, resolved through `POST /lookup`.
+        * `MULTI_PERSON`  - one or more people's profile ids in `FieldChange.values`.
+        * `ORGANIZATION`  - one organization id in `FieldChange.value`, resolved through
+          `GET /profiles/organization/options`.
+        * `POSITION`      - one position id in `FieldChange.value`, resolved through the position management
+          API. This API offers no position resolver of its own, and the field carries no `options`.
+        * `MONEY`         - an amount and the currency it is in, as named parts in `FieldChange.entries`:
+          `amount` (a number as a string) and `currency` (one option's `value` from `options`). `currency`
+          may be omitted to store a bare amount.
+        * `TEXT_MAP`      - a piece of text per option (a job description per role, a note per
+          career-planning topic), as `FieldChange.entries` keyed by the option `value`s in `options`.
+        * `OTHER`         - a field type this API does not yet support; not editable here.
+
+        The reference types (`SINGLE_SELECT`, `MULTI_SELECT`, `PERSON`, `MULTI_PERSON`, `ORGANIZATION`,
+        `POSITION`) carry the referenced thing's **id** — never its name, and never an internal id.
+        `options` is populated for the select types, for a `MONEY` field's currencies, and for the keys a
+        `TEXT_MAP` field's `entries` may use. People, organizations and positions are too many to list, so
+        each is resolved through an endpoint instead.
+      enum: [TEXT, NUMBER, DATE, BOOLEAN, SINGLE_SELECT, MULTI_SELECT, PERSON, MULTI_PERSON, ORGANIZATION,
+             POSITION, MONEY, TEXT_MAP, OTHER]
+
+    FieldStatus:
+      type: string
+      description: |
+        Outcome of a field write.
+        * `APPLIED`          - written directly to the profile, effective now.
+        * `PENDING_APPROVAL` - routed to an approval workflow; a pending change request now exists.
+        * `SCHEDULED`        - accepted for a future effective date (`effectiveFrom`); not yet applied.
+      enum: [APPLIED, PENDING_APPROVAL, SCHEDULED]
+
+    Approver:
+      type: string
+      description: |
+        The role that must approve a `PENDING_APPROVAL` change.
+        * `MANAGER`               - the person's direct manager.
+        * `SECOND_LEVEL_MANAGER`  - the manager's manager.
+        * `HR_LOCAL`              - local HR.
+        * `HR_ORG`                - organization-level HR.
+        * `HR_ADMIN`              - HR administrator.
+      enum: [MANAGER, SECOND_LEVEL_MANAGER, HR_LOCAL, HR_ORG, HR_ADMIN]
+
+    ChangeCollection:
+      type: object
+      description: |
+        HAL collection of a profile's outstanding changes, under `_embedded.changes`; `_embedded` is
+        omitted when there are none.
+      properties:
+        _embedded:
+          type: object
+          properties:
+            changes:
+              type: array
+              items: { $ref: '#/components/schemas/PendingChange' }
+        _links:
+          type: object
+          properties:
+            self: { $ref: '#/components/schemas/HalLink' }
+
+    PendingChange:
+      type: object
+      description: One outstanding change — awaiting approval or scheduled for a future date.
+      properties:
+        id:
+          type: string
+          description: Opaque id; pass to `DELETE /profiles/changes/{changeId}` to cancel. Treat as opaque.
+          pattern: ^(CR|SC)-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+          example: SC-2b2d9f1a-2c44-4d0e-9a1c-8e2f0b6a1234
+        key:
+          type: string
+          description: Integration key of the field the change applies to.
+          example: ADDRESS_HOME_COUNTRY
+        label:
+          type: string
+          description: |
+            That field's label in your language — show this, not the `key`. Omitted when the tenant has no
+            label for the field.
+          example: Country
+        kind: { $ref: '#/components/schemas/ChangeKind' }
+        value:
+          type: string
+          description: The requested new value (raw; a scale-value id for select fields).
+        displayValue:
+          type: string
+          description: |
+            The same value in words — the option's name, a person's name, `52000 NOK` — and the one to show
+            a person. Omitted when the value is unset or nothing about it resolves.
+          example: Norway
+        effectiveFrom:
+          type: string
+          format: date
+          description: The date a `SCHEDULED` change takes effect. Present only when `kind` is `SCHEDULED`.
+        requestedOn:
+          type: string
+          format: date
+          description: When the change was requested. Present for `PENDING_APPROVAL` changes.
+        _links:
+          type: object
+          properties:
+            self: { $ref: '#/components/schemas/HalLink' }
+
+    ChangeKind:
+      type: string
+      description: |
+        The kind of outstanding change.
+        * `PENDING_APPROVAL` - awaiting approval; a pending change request exists.
+        * `SCHEDULED`        - accepted for a future effective date; not yet applied.
+      enum: [PENDING_APPROVAL, SCHEDULED]
+
+  responses:
+    InvalidEmbedError:
+      description: |
+        An `embed` value is not a known sub-resource key. Keys are matched case-insensitively after
+        trimming, and every supplied key must be valid — one bad key rejects the whole request rather
+        than being ignored, so a typo cannot look like "that sub-resource has no data".
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://datatracker.ietf.org/doc/html/rfc7231#section-6.5.1
+            title: Bad Request
+            status: 400
+            detail: 'Invalid embed values: [organisation]'
+    UnauthorizedError:
+      description: Missing or invalid authentication.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://datatracker.ietf.org/doc/html/rfc7235#section-3.1
+            title: Unauthorized
+            status: 401
+    ForbiddenError:
+      description: |
+        Caller is authenticated but not allowed to read or edit this person, field or change. Also returned
+        when the token carries no profile GUID to act as — a machine principal — since this API is
+        named-user only and has nothing for a caller that owns no profile.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://datatracker.ietf.org/doc/html/rfc7231#section-6.5.3
+            title: Forbidden
+            status: 403
+    NotFoundError:
+      description: The resource could not be resolved for the caller — an unknown or unreachable profile id, no organization / job assignment, or no such outstanding change.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://datatracker.ietf.org/doc/html/rfc7231#section-6.5.4
+            title: Not Found
+            status: 404
+    InternalServerError:
+      description: Unexpected server error. Generally safe to retry.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://datatracker.ietf.org/doc/html/rfc7231#section-6.6.1
+            title: Internal Server Error
+            status: 500
+
+  examples:
+    SelfProfile:
+      summary: GET /profiles (self) with account inlined.
+      value:
+        profileId: 4f0c8c2e-7d83-4a4f-8e3d-1c1f3a9a4d11
+        firstName: John
+        lastName: Doe
+        email: john.doe@acme.com
+        language: en
+        locale: en-US
+        dateFormat: yyyy-MM-dd
+        _embedded:
+          account:
+            id: 9a5b1a44-4f9e-4b6e-94e0-9c1f9f6a4cc1
+            status: ACTIVE
+        _links:
+          self:         { href: "/profiles?embed=account" }
+          organization: { href: /profiles/4f0c8c2e-7d83-4a4f-8e3d-1c1f3a9a4d11/organization }
+          job:          { href: /profiles/4f0c8c2e-7d83-4a4f-8e3d-1c1f3a9a4d11/job }
+          manager:      { href: /profiles/4f0c8c2e-7d83-4a4f-8e3d-1c1f3a9a4d11/manager }
+          photo:        { href: /profiles/4f0c8c2e-7d83-4a4f-8e3d-1c1f3a9a4d11/photo }
+    OtherProfile:
+      summary: GET /profiles/{profileId} (another person, masked — no account/preferences).
+      value:
+        profileId: 7b2d9f1a-2c44-4d0e-9a1c-8e2f0b6a1234
+        firstName: Ada
+        lastName: Lovelace
+        email: ada@example.com
+        _links:
+          self:         { href: /profiles/7b2d9f1a-2c44-4d0e-9a1c-8e2f0b6a1234 }
+          organization: { href: /profiles/7b2d9f1a-2c44-4d0e-9a1c-8e2f0b6a1234/organization }
+          job:          { href: /profiles/7b2d9f1a-2c44-4d0e-9a1c-8e2f0b6a1234/job }
+          manager:      { href: /profiles/7b2d9f1a-2c44-4d0e-9a1c-8e2f0b6a1234/manager }
+          photo:        { href: /profiles/7b2d9f1a-2c44-4d0e-9a1c-8e2f0b6a1234/photo }
+    ChangeCollectionExample:
+      summary: One change awaiting approval and one scheduled for a future date.
+      value:
+        _embedded:
+          changes:
+            - id: CR-1f0c8c2e-7d83-4a4f-8e3d-1c1f3a9a4d11
+              key: PRIVATE_EMAIL
+              kind: PENDING_APPROVAL
+              value: n@example.com
+              requestedOn: '2026-07-01'
+              _links:
+                self: { href: /profiles/changes/CR-1f0c8c2e-7d83-4a4f-8e3d-1c1f3a9a4d11 }
+            - id: SC-2b2d9f1a-2c44-4d0e-9a1c-8e2f0b6a1234
+              key: ADDRESS_HOME_COUNTRY
+              kind: SCHEDULED
+              value: 2b1f0c33-9a4d-4e77-bf0e-6a2c9d5e8a10
+              effectiveFrom: '2026-12-01'
+              _links:
+                self: { href: /profiles/changes/SC-2b2d9f1a-2c44-4d0e-9a1c-8e2f0b6a1234 }
+        _links:
+          self: { href: /profiles/changes }
+    FieldCatalogExample:
+      summary: A caller who may edit their nickname, private email and marital status.
+      value:
+        _embedded:
+          fields:
+            - key: NICK_NAME
+              label: Nickname
+              type: TEXT
+              editable: true
+              mandatory: false
+              needsApproval: false
+              options: []
+            - key: PRIVATE_EMAIL
+              label: Private email
+              type: TEXT
+              editable: true
+              mandatory: false
+              needsApproval: false
+              options: []
+            - key: MARITAL_STATUS
+              label: Marital status
+              description: Legal marital status.
+              type: SINGLE_SELECT
+              editable: true
+              mandatory: false
+              needsApproval: true
+              options:
+                - value: 6e9b85d4-6a3a-4b3e-8a44-f3e9a4e6b2d1
+                  label: Single
+                - value: 2b1f0c33-9a4d-4e77-bf0e-6a2c9d5e8a10
+                  label: Married
+        _links:
+          self: { href: /profiles/fields }
+    UpdateNameAndEmail:
+      summary: Change nickname and private email.
+      value:
+        fields:
+          - key: NICK_NAME
+            value: Nick
+          - key: PRIVATE_EMAIL
+            value: nick@example.com
+    UpdateMaritalStatus:
+      summary: Change marital status (a single-select field — send an option value).
+      value:
+        fields:
+          - key: MARITAL_STATUS
+            value: 2b1f0c33-9a4d-4e77-bf0e-6a2c9d5e8a10
+    ResultAllApplied:
+      summary: Every field applied directly (HTTP 200).
+      value:
+        outcome: APPLIED
+        fields:
+          - key: NICK_NAME
+            status: APPLIED
+          - key: PRIVATE_EMAIL
+            status: APPLIED
+        _links:
+          self: { href: /profiles/4f0c8c2e-7d83-4a4f-8e3d-1c1f3a9a4d11 }
+    ResultMixed:
+      summary: Private email applied, marital status needs approval (HTTP 202).
+      value:
+        outcome: PENDING_APPROVAL
+        fields:
+          - key: PRIVATE_EMAIL
+            status: APPLIED
+          - key: MARITAL_STATUS
+            status: PENDING_APPROVAL
+            changeId: CR-1f0c8c2e-7d83-4a4f-8e3d-1c1f3a9a4d11
+        _links:
+          self:    { href: /profiles/4f0c8c2e-7d83-4a4f-8e3d-1c1f3a9a4d11 }
+          changes: { href: /profiles/4f0c8c2e-7d83-4a4f-8e3d-1c1f3a9a4d11/changes }
